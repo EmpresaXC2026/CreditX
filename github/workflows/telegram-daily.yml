@@ -1,36 +1,44 @@
-name: Alerta Diaria Telegram
+if (fp === hoy)    cobrosHoy.push(linea);
+                else if (fp === manana) cobrosManana.push(linea);
+                else if (fp < hoy) atrasados.push((i) => \\${i}. *\${p.nombre}*\${p.telefono ? ' | 馃摓 ' + p.telefono : ''}\\n   鈿狅笍 Atrasado 鈥� Saldo: Q \${saldo.toFixed(2)}\);
+              }
 
-on:
-  schedule:
-    - cron: '0 12 * * *'  # 6 AM Guatemala (UTC-6)
+              if (!cobrosHoy.length && !cobrosManana.length && !atrasados.length) {
+                await sendTelegram('鉁� *CreditX 鈥� Sin cobros pendientes hoy*\\n馃搮 ' + fechaLabel);
+                return;
+              }
 
-jobs:
-  enviar-alerta:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Leer datos de Firestore y enviar a Telegram
-        env:
-          TG_TOKEN: ${{ secrets.TG_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
-        run: |
-          node -e "
-          const https = require('https');
+              let partes = ['馃搵 *RESUMEN DEL D脥A 鈥� CreditX*\\n馃搮 ' + fechaLabel];
 
-          const token = process.env.TG_TOKEN;
-          const chatId = process.env.TG_CHAT_ID;
-          const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+              if (cobrosHoy.length) {
+                let total = 0;
+                prestamos.filter(p => p.fechaProximoPago === hoy && p.estado !== 'Pagado')
+                  .forEach(p => { total += p.cuota || 0; });
+                partes.push('馃挵 *COBRAR HOY (' + cobrosHoy.length + ')*\\n' + '鈹€'.repeat(22) + '\\n\\n' +
+                  cobrosHoy.map((fn, i) => fn(i+1)).join('\\n\\n') +
+                  '\\n\\n馃挼 Total hoy: Q ' + total.toFixed(2));
+              }
 
-          // Mensaje de prueba inicial
-          const msg = '🌅 Buenos días\n📋 CreditX — Alerta diaria lista';
+              if (cobrosManana.length) {
+                let total = 0;
+                prestamos.filter(p => p.fechaProximoPago === manana && p.estado !== 'Pagado')
+                  .forEach(p => { total += p.cuota || 0; });
+                partes.push('馃敂 *COBRAR MA脩ANA (' + cobrosManana.length + ')*\\n' + '鈹€'.repeat(22) + '\\n\\n' +
+                  cobrosManana.map((fn, i) => fn(i+1)).join('\\n\\n') +
+                  '\\n\\n馃挼 Total ma帽ana: Q ' + total.toFixed(2));
+              }
 
-          const body = JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' });
-          const req = https.request({
-            hostname: 'api.telegram.org',
-            path: '/bot' + token + '/sendMessage',
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Content-Length': body.length }
-          });
-          req.write(body);
-          req.end();
+              if (atrasados.length) {
+                partes.push('鈿狅笍 *PAGOS ATRASADOS (' + atrasados.length + ')*\\n' + '鈹€'.repeat(22) + '\\n\\n' +
+                  atrasados.map((fn, i) => fn(i+1)).join('\\n\\n'));
+              }
+
+              partes.push('_CreditX 鈥� Soluciones Financieras_');
+              await sendTelegram(partes.join('\\n\\n'));
+              console.log('Mensaje enviado correctamente');
+            } catch(e) {
+              console.error(e);
+              await sendTelegram('鉂� Error en alerta diaria CreditX: ' + e.message);
+            }
+          })();
           "
