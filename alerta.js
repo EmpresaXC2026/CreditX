@@ -113,4 +113,4 @@ function getSaldo(p, pagos) {
     console.error(e);
     await send('Error CreditX: ' + e.message);
   }
-})();
+})().finally(() => process.exit(0));
