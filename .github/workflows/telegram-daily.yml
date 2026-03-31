@@ -1,0 +1,44 @@
+if (fp === hoy)    cobrosHoy.push(linea);
+                else if (fp === manana) cobrosManana.push(linea);
+                else if (fp < hoy) atrasados.push((i) => \\${i}. *\${p.nombre}*\${p.telefono ? ' | 馃摓 ' + p.telefono : ''}\\n   鈿狅笍 Atrasado 鈥� Saldo: Q \${saldo.toFixed(2)}\);
+              }
+
+              if (!cobrosHoy.length && !cobrosManana.length && !atrasados.length) {
+                await sendTelegram('鉁� *CreditX 鈥� Sin cobros pendientes hoy*\\n馃搮 ' + fechaLabel);
+                return;
+              }
+
+              let partes = ['馃搵 *RESUMEN DEL D脥A 鈥� CreditX*\\n馃搮 ' + fechaLabel];
+
+              if (cobrosHoy.length) {
+                let total = 0;
+                prestamos.filter(p => p.fechaProximoPago === hoy && p.estado !== 'Pagado')
+                  .forEach(p => { total += p.cuota || 0; });
+                partes.push('馃挵 *COBRAR HOY (' + cobrosHoy.length + ')*\\n' + '鈹€'.repeat(22) + '\\n\\n' +
+                  cobrosHoy.map((fn, i) => fn(i+1)).join('\\n\\n') +
+                  '\\n\\n馃挼 Total hoy: Q ' + total.toFixed(2));
+              }
+
+              if (cobrosManana.length) {
+                let total = 0;
+                prestamos.filter(p => p.fechaProximoPago === manana && p.estado !== 'Pagado')
+                  .forEach(p => { total += p.cuota || 0; });
+                partes.push('馃敂 *COBRAR MA脩ANA (' + cobrosManana.length + ')*\\n' + '鈹€'.repeat(22) + '\\n\\n' +
+                  cobrosManana.map((fn, i) => fn(i+1)).join('\\n\\n') +
+                  '\\n\\n馃挼 Total ma帽ana: Q ' + total.toFixed(2));
+              }
+
+              if (atrasados.length) {
+                partes.push('鈿狅笍 *PAGOS ATRASADOS (' + atrasados.length + ')*\\n' + '鈹€'.repeat(22) + '\\n\\n' +
+                  atrasados.map((fn, i) => fn(i+1)).join('\\n\\n'));
+              }
+
+              partes.push('_CreditX 鈥� Soluciones Financieras_');
+              await sendTelegram(partes.join('\\n\\n'));
+              console.log('Mensaje enviado correctamente');
+            } catch(e) {
+              console.error(e);
+              await sendTelegram('鉂� Error en alerta diaria CreditX: ' + e.message);
+            }
+          })();
+          "
