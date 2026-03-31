@@ -1,0 +1,36 @@
+name: Alerta Diaria Telegram
+
+on:
+  schedule:
+    - cron: '0 12 * * *'  # 6 AM Guatemala (UTC-6)
+
+jobs:
+  enviar-alerta:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Leer datos de Firestore y enviar a Telegram
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
+        run: |
+          node -e "
+          const https = require('https');
+
+          const token = process.env.TG_TOKEN;
+          const chatId = process.env.TG_CHAT_ID;
+          const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+
+          // Mensaje de prueba inicial
+          const msg = '🌅 Buenos días\n📋 CreditX — Alerta diaria lista';
+
+          const body = JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' });
+          const req = https.request({
+            hostname: 'api.telegram.org',
+            path: '/bot' + token + '/sendMessage',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': body.length }
+          });
+          req.write(body);
+          req.end();
+          "
