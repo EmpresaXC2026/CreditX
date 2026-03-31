@@ -1,8 +1,10 @@
 name: Alerta Diaria Telegram
+
 on:
   schedule:
     - cron: '0 12 * * *'
   workflow_dispatch:
+
 jobs:
   alerta:
     runs-on: ubuntu-latest
@@ -11,9 +13,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm install firebase-admin
-      - run: node alerta.js
+      - name: Install dependencies
+        run: npm install firebase-admin puppeteer
+      - name: Enviar alerta y PDF
         env:
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
+        run: node alerta.js
