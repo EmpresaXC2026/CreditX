@@ -139,14 +139,14 @@ function generarHTML(prestamos, pagos, hoy, deudas, gastos, papeleria) {
     const pagado = getPagadoReal(p, pagos);
     const pagosRealizados = pagos.filter(pg => pg.prestamoId === p.id && !pg.soloIncumplimiento).length;
     const fechasCuotas = getCuotasFechas(p);
-    const proximaCuota = fechasCuotas[pagosRealizados];
+    const cuotasVencidas = fechasCuotas.filter((fc, idx) => fc.fecha < hoy && idx >= pagosRealizados);
 
     let estado = 'Al día';
     let diasAtraso = 0;
     if (saldo <= 0) { estado = 'Pagado'; countPagado++; }
-    else if (proximaCuota && proximaCuota.fecha < hoy) {
+    else if (cuotasVencidas.length > 0) {
       estado = 'Atrasado';
-      diasAtraso = Math.floor((new Date(hoy) - new Date(proximaCuota.fecha)) / 86400000);
+      diasAtraso = Math.floor((new Date(hoy + 'T12:00:00') - new Date(cuotasVencidas[0].fecha + 'T12:00:00')) / 86400000);
       countAtrasado++;
     } else { countAlDia++; }
 
@@ -177,21 +177,22 @@ function generarHTML(prestamos, pagos, hoy, deudas, gastos, papeleria) {
     if (saldo <= 0) return false;
     const pagosRealizados = pagos.filter(pg => pg.prestamoId === p.id && !pg.soloIncumplimiento).length;
     const fechasCuotas = getCuotasFechas(p);
-    const proximaCuota = fechasCuotas[pagosRealizados];
-    return proximaCuota && proximaCuota.fecha < hoy;
+    const cuotasVencidas = fechasCuotas.filter((fc, idx) => fc.fecha < hoy && idx >= pagosRealizados);
+    return cuotasVencidas.length > 0;
   });
 
   const filasAtrasados = atrasadosList.map((p, i) => {
     const saldo = getSaldo(p, pagos);
     const pagosRealizados = pagos.filter(pg => pg.prestamoId === p.id && !pg.soloIncumplimiento).length;
     const fechasCuotas = getCuotasFechas(p);
-    const proximaCuota = fechasCuotas[pagosRealizados];
-    const dias = Math.floor((new Date(hoy) - new Date(proximaCuota.fecha)) / 86400000);
+    const cuotasVencidas = fechasCuotas.filter((fc, idx) => fc.fecha < hoy && idx >= pagosRealizados);
+    const fechaAntigua = cuotasVencidas[0].fecha;
+    const dias = Math.floor((new Date(hoy + 'T12:00:00') - new Date(fechaAntigua + 'T12:00:00')) / 86400000);
     return `<tr>
       <td>${i + 1}</td>
       <td>${p.nombre}</td>
       <td>${p.telefono || '—'}</td>
-      <td style="color:#e74c3c">${proximaCuota.fecha}</td>
+      <td style="color:#e74c3c">${fechaAntigua}</td>
       <td style="color:#e74c3c">${dias} día${dias !== 1 ? 's' : ''}</td>
       <td style="color:#e74c3c">${fmtQ(saldo)}</td>
       <td>Q 0.00</td>
@@ -315,11 +316,12 @@ function generarHTML(prestamos, pagos, hoy, deudas, gastos, papeleria) {
       const pagosRealizados = pagos.filter(pg => pg.prestamoId === p.id && !pg.soloIncumplimiento).length;
       const fechasCuotas = getCuotasFechas(p);
       const proximaCuota = fechasCuotas[pagosRealizados];
+      const cuotasVencidas = fechasCuotas.filter((fc, idx) => fc.fecha < hoy && idx >= pagosRealizados);
       if (!proximaCuota) continue;
       const info = p.nombre + (p.telefono ? ' | ' + p.telefono : '') + '\n   Q ' + (p.cuota || 0).toFixed(2) + ' | Saldo: ' + fmtQ(saldo);
-      if (proximaCuota.fecha === hoy) cobrosHoy.push(info);
+      if (cuotasVencidas.length > 0) atrasados.push(p.nombre + ' | Saldo: ' + fmtQ(saldo));
+      else if (proximaCuota.fecha === hoy) cobrosHoy.push(info);
       else if (proximaCuota.fecha === manana) cobrosManana.push(info);
-      else if (proximaCuota.fecha < hoy) atrasados.push(p.nombre + ' | Saldo: ' + fmtQ(saldo));
     }
 
     if (cobrosHoy.length || cobrosManana.length || atrasados.length) {
