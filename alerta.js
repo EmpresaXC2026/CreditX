@@ -119,12 +119,18 @@ function getPagadoReal(p, pagos) {
 
 function fmtQ(n) { return 'Q ' + (n || 0).toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
-function generarHTML(prestamos, pagos, hoy, deudas) {
+function generarHTML(prestamos, pagos, hoy, deudas, gastos, papeleria) {
   const fechaLabel = new Date(hoy + 'T12:00:00').toLocaleDateString('es-GT', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
   });
 
   const deudaAcumulada = (deudas || []).reduce((a, d) => a + (d.monto || 0), 0);
+
+  // Posición de Caja Real (igual que la app)
+  const cuotaBanco = (deudas || []).reduce((a, d) => a + (d.cuota || d.monto || 0), 0);
+  const efectivoRenov = prestamos.filter(p => p.esRenovacion).reduce((a, p) => a + (p.efectivoEntregado || 0), 0);
+  const papeleriaRenov = (papeleria || []).filter(p => p.notas && p.notas.includes('Renovación')).reduce((a, p) => a + (p.monto || 0), 0);
+  const totalGastos = (gastos || []).reduce((a, g) => a + (g.monto || 0), 0);
 
   let totalMonto = 0, totalPagado = 0, totalSaldo = 0, countAlDia = 0, countAtrasado = 0, countPagado = 0;
   const filas = prestamos.map((p, i) => {
@@ -192,6 +198,16 @@ function generarHTML(prestamos, pagos, hoy, deudas) {
     </tr>`;
   }).join('');
 
+  const posicionCajaReal = totalPagado - cuotaBanco - efectivoRenov - papeleriaRenov - totalGastos;
+  const cajaColor = posicionCajaReal >= 0 ? '#27ae60' : '#e74c3c';
+  const cajaDesc = [
+    `Recuperado ${fmtQ(totalPagado)}`,
+    cuotaBanco > 0 ? `Banco ${fmtQ(cuotaBanco)}` : '',
+    efectivoRenov > 0 ? `Entregado renovac. ${fmtQ(efectivoRenov)}` : '',
+    papeleriaRenov > 0 ? `Papelería renovac. ${fmtQ(papeleriaRenov)}` : '',
+    totalGastos > 0 ? `Gastos ${fmtQ(totalGastos)}` : '',
+  ].filter(Boolean).join(' – ');
+
   return `<!DOCTYPE html><html><head><meta charset="UTF-8">
   <style>
     body { font-family: Arial, sans-serif; font-size: 12px; color: #333; margin: 20px; }
@@ -224,7 +240,7 @@ function generarHTML(prestamos, pagos, hoy, deudas) {
     <div class="kpi"><div class="kpi-label">Total Prestado</div><div class="kpi-value" style="color:#c8102e">${fmtQ(totalMonto)}</div></div>
     <div class="kpi"><div class="kpi-label">Total Pagado</div><div class="kpi-value" style="color:#27ae60">${fmtQ(totalPagado)}</div></div>
     <div class="kpi"><div class="kpi-label">🏦 Deuda Banco</div><div class="kpi-value" style="color:#e74c3c">- ${fmtQ(deudaAcumulada)}</div></div>
-    <div class="kpi"><div class="kpi-label">✅ Disponible</div><div class="kpi-value" style="color:${(totalPagado - deudaAcumulada) >= 0 ? '#27ae60' : '#e74c3c'}">${fmtQ(totalPagado - deudaAcumulada)}</div></div>
+    <div class="kpi"><div class="kpi-label">💲 Posición de Caja Real</div><div class="kpi-value" style="color:${cajaColor}">${fmtQ(posicionCajaReal)}</div><div style="font-size:8px;color:#888;margin-top:4px;">${cajaDesc}</div></div>
     <div class="kpi"><div class="kpi-label">Saldo Pendiente</div><div class="kpi-value" style="color:#e74c3c">${fmtQ(totalSaldo)}</div></div>
   </div>
   ${deudas && deudas.length > 0 ? `
@@ -238,7 +254,7 @@ function generarHTML(prestamos, pagos, hoy, deudas) {
       <td style="color:#e74c3c">- ${fmtQ(d.monto)}</td>
       <td style="color:${(d.disponible || 0) >= 0 ? '#27ae60' : '#e74c3c'}">${fmtQ(d.disponible)}</td>
     </tr>`).join('')}</tbody>
-    <tfoot><tr class="totals"><td colspan="3">TOTAL DEUDA BANCO →</td><td style="color:#e74c3c">- ${fmtQ(deudaAcumulada)}</td><td style="color:${(totalPagado - deudaAcumulada) >= 0 ? '#27ae60' : '#e74c3c'}">${fmtQ(totalPagado - deudaAcumulada)}</td></tr></tfoot>
+    <tfoot><tr class="totals"><td colspan="3">TOTAL DEUDA BANCO →</td><td style="color:#e74c3c">- ${fmtQ(deudaAcumulada)}</td><td style="color:${cajaColor}">${fmtQ(posicionCajaReal)}</td></tr></tfoot>
   </table>` : ''}
   <h3>Detalle de Préstamos</h3>
   <table>
@@ -265,6 +281,8 @@ function generarHTML(prestamos, pagos, hoy, deudas) {
     const prestamos = data.prestamos || [];
     const pagos = data.pagos || [];
     const deudas = data.deudas || [];
+    const gastos = data.gastos || [];
+    const papeleria = data.papeleria || [];
     const hoy = getDateStr(0);
     const manana = getDateStr(1);
 
@@ -274,7 +292,7 @@ function generarHTML(prestamos, pagos, hoy, deudas) {
 
     // Generar PDF con Puppeteer
     const puppeteer = require('puppeteer');
-    const htmlContent = generarHTML(prestamos, pagos, hoy, deudas);
+    const htmlContent = generarHTML(prestamos, pagos, hoy, deudas, gastos, papeleria);
     const htmlPath = '/tmp/reporte.html';
     const pdfPath = '/tmp/reporte.pdf';
     fs.writeFileSync(htmlPath, htmlContent);
