@@ -82,13 +82,30 @@ function getCuotasFechas(p) {
   const esMensual   = p.frecuencia === 'mensual';
   const totalCuotas = Math.round(p.total / p.cuota);
   const fechas = [];
+  const festivos = global._festivos || [];
+
+  function esDiaInhabil(d) {
+    if (d.getDay() === 0) return true;
+    return festivos.includes(d.toISOString().split('T')[0]);
+  }
+
   if (esDiario || esSemanal) {
     let offsetExtra = 0;
     for (let i = 0; i < totalCuotas; i++) {
       const d = new Date(p.fecha + 'T12:00:00');
-      if (esSemanal) d.setDate(d.getDate() + (i + 1) * 7 + offsetExtra);
-      else d.setDate(d.getDate() + (i + 1) + offsetExtra);
-      if (d.getDay() === 0) { d.setDate(d.getDate() + 1); offsetExtra++; }
+      if (esSemanal) {
+        d.setDate(d.getDate() + (i + 1) * 7 + offsetExtra);
+      } else {
+        d.setDate(d.getDate() + (i + 1) + offsetExtra);
+      }
+      if (esDiaInhabil(d)) {
+        d.setDate(d.getDate() + 1);
+        offsetExtra += 1;
+        while (esDiaInhabil(d)) {
+          d.setDate(d.getDate() + 1);
+          offsetExtra += 1;
+        }
+      }
       fechas.push({ num: i + 1, fecha: d.toISOString().split('T')[0] });
     }
   } else {
@@ -97,7 +114,7 @@ function getCuotasFechas(p) {
       if (esMensual) d.setMonth(d.getMonth() + (i + 1));
       else if (esQuincenal) d.setDate(d.getDate() + (i + 1) * 15);
       else d.setDate(d.getDate() + (i + 1));
-      if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+      while (esDiaInhabil(d)) d.setDate(d.getDate() + 1);
       fechas.push({ num: i + 1, fecha: d.toISOString().split('T')[0] });
     }
   }
@@ -284,8 +301,16 @@ function generarHTML(prestamos, pagos, hoy, deudas, gastos, papeleria) {
     const deudas = data.deudas || [];
     const gastos = data.gastos || [];
     const papeleria = data.papeleria || [];
+    const festivos = data.festivos || [];
+
+    // Set global for getCuotasFechas
+    global._festivos = festivos;
     const hoy = getDateStr(0);
     const manana = getDateStr(1);
+
+    console.log('HOY:', hoy);
+    console.log('FESTIVOS en Firestore:', JSON.stringify(festivos));
+    console.log('Total festivos:', festivos.length);
 
     const fechaLabel = new Date(hoy + 'T12:00:00').toLocaleDateString('es-GT', {
       weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
