@@ -478,6 +478,122 @@ async function generarExcel(prestamos, pagos, hoy) {
   // Column widths
   [4,22,16,15,14,12,16,16,15,16,10,10].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
+  // ========== HOJA 2: DETALLE RENOVACIONES ==========
+  const wr = wb.addWorksheet('Detalle Renovaciones', { properties: { tabColor: { argb: 'FB8C00' } } });
+  wr.mergeCells('A1:H1');
+  const wrTitle = wr.getCell('A1');
+  wrTitle.value = 'DETALLE DE RENOVACIONES';
+  wrTitle.font = { bold: true, size: 14, color: { argb: 'FFFFFF' } };
+  wrTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E65100' } };
+  wrTitle.alignment = { horizontal: 'center', vertical: 'middle' };
+  wr.getRow(1).height = 32;
+
+  const wrHeaders = ['Cliente','Préstamo Anterior','Monto Anterior','Pagado Anterior','Nuevo Préstamo','Monto Nuevo','Total Nuevo','Fecha Renovación'];
+  const wrHr = wr.addRow(wrHeaders);
+  wrHr.eachCell((c) => {
+    c.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '2E4057' } };
+    c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    c.border = thinBorder;
+  });
+
+  // Match renovaciones with their cerrados by nombre
+  for (const ren of renovaciones) {
+    const cerrado = cerrados.find(c => c.nombre.toLowerCase() === ren.nombre.toLowerCase());
+    const r = wr.addRow([
+      ren.nombre,
+      cerrado ? `${cerrado.fecha} → ${cerrado.vence}` : '—',
+      cerrado ? cerrado.monto : 0,
+      cerrado ? cerrado.pagado : 0,
+      `${ren.fecha} → ${ren.vence}`,
+      ren.monto,
+      ren.totalCalc,
+      ren.fecha
+    ]);
+    r.eachCell((c, ci) => {
+      c.font = { name: 'Arial', size: 10 };
+      c.border = thinBorder;
+      c.fill = fills.renov;
+      if ([3,4,6,7].includes(ci)) c.numFmt = '#,##0.00';
+    });
+  }
+
+  // Totals row
+  const wrDataStart = 3;
+  const wrDataEnd = wrDataStart + renovaciones.length - 1;
+  const wrTot = wr.addRow(['TOTALES']);
+  wrTot.getCell(1).font = { bold: true, name: 'Arial', size: 10 };
+  for (const [ci, letter] of [[3,'C'],[4,'D'],[6,'F'],[7,'G']]) {
+    const c = wrTot.getCell(ci);
+    c.value = { formula: `SUM(${letter}${wrDataStart}:${letter}${wrDataEnd})` };
+    c.numFmt = '#,##0.00';
+    c.font = { bold: true, name: 'Arial', size: 10 };
+    c.border = { top: { style: 'medium' }, bottom: { style: 'medium' }, left: { style: 'thin' }, right: { style: 'thin' } };
+  }
+  [22,24,16,16,24,16,16,16].forEach((w, i) => { wr.getColumn(i + 1).width = w; });
+
+  // ========== HOJA 3: RESUMEN EJECUTIVO ==========
+  const rs = wb.addWorksheet('Resumen Ejecutivo', { properties: { tabColor: { argb: '1B3A4B' } } });
+  rs.mergeCells('A1:D1');
+  const rsTitle = rs.getCell('A1');
+  rsTitle.value = 'RESUMEN EJECUTIVO — CREDITX';
+  rsTitle.font = { bold: true, size: 14, color: { argb: 'FFFFFF' } };
+  rsTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1B3A4B' } };
+  rsTitle.alignment = { horizontal: 'center', vertical: 'middle' };
+  rs.getRow(1).height = 35;
+
+  const sectionFont = { bold: true, size: 12, color: { argb: '1B3A4B' } };
+  const valFont = { bold: true, name: 'Arial', size: 11 };
+  const lblFont = { name: 'Arial', size: 10 };
+  const botBorder = { bottom: { style: 'medium' } };
+
+  // Cartera Activa
+  let rr = 3;
+  rs.mergeCells(`A${rr}:D${rr}`);
+  rs.getCell(`A${rr}`).value = 'CARTERA ACTIVA'; rs.getCell(`A${rr}`).font = sectionFont; rs.getCell(`A${rr}`).border = botBorder;
+  rr++;
+  const activosMonto = activos.reduce((a, p) => a + (p.monto || 0), 0);
+  const renovMonto = renovaciones.reduce((a, p) => a + (p.monto || 0), 0);
+  rs.getCell(`A${rr}`).value = 'Préstamos activos totales'; rs.getCell(`A${rr}`).font = lblFont;
+  rs.getCell(`B${rr}`).value = activosMonto + renovMonto; rs.getCell(`B${rr}`).numFmt = '#,##0.00'; rs.getCell(`B${rr}`).font = valFont;
+  rr++;
+  rs.getCell(`A${rr}`).value = 'Préstamos activos marzo'; rs.getCell(`A${rr}`).font = lblFont;
+  rs.getCell(`B${rr}`).value = activosMonto; rs.getCell(`B${rr}`).numFmt = '#,##0.00'; rs.getCell(`B${rr}`).font = valFont;
+  rs.getCell(`C${rr}`).value = activos.length; rs.getCell(`D${rr}`).value = 'préstamos'; rs.getCell(`D${rr}`).font = lblFont;
+  rr++;
+  rs.getCell(`A${rr}`).value = 'Préstamos renovaciones abril'; rs.getCell(`A${rr}`).font = lblFont;
+  rs.getCell(`B${rr}`).value = renovMonto; rs.getCell(`B${rr}`).numFmt = '#,##0.00'; rs.getCell(`B${rr}`).font = valFont;
+  rs.getCell(`C${rr}`).value = renovaciones.length; rs.getCell(`D${rr}`).value = 'préstamos'; rs.getCell(`D${rr}`).font = lblFont;
+  rr += 2;
+
+  // Cobranza
+  rs.mergeCells(`A${rr}:D${rr}`);
+  rs.getCell(`A${rr}`).value = 'COBRANZA'; rs.getCell(`A${rr}`).font = sectionFont; rs.getCell(`A${rr}`).border = botBorder;
+  rr++;
+  const totalCobrado = prestamos.reduce((a, p) => a + getPagadoReal(p, pagos), 0);
+  const totalSaldoPend = prestamos.reduce((a, p) => a + Math.max(0, getSaldo(p, pagos)), 0);
+  rs.getCell(`A${rr}`).value = 'Total cobrado a la fecha'; rs.getCell(`A${rr}`).font = lblFont;
+  rs.getCell(`B${rr}`).value = totalCobrado; rs.getCell(`B${rr}`).numFmt = '#,##0.00'; rs.getCell(`B${rr}`).font = valFont;
+  rr++;
+  rs.getCell(`A${rr}`).value = 'Saldo pendiente por cobrar'; rs.getCell(`A${rr}`).font = lblFont;
+  rs.getCell(`B${rr}`).value = totalSaldoPend; rs.getCell(`B${rr}`).numFmt = '#,##0.00'; rs.getCell(`B${rr}`).font = valFont;
+  rr += 2;
+
+  // Cartera Cerrada
+  rs.mergeCells(`A${rr}:D${rr}`);
+  rs.getCell(`A${rr}`).value = 'CARTERA CERRADA'; rs.getCell(`A${rr}`).font = sectionFont; rs.getCell(`A${rr}`).border = botBorder;
+  rr++;
+  const cerradosMonto = cerrados.reduce((a, p) => a + (p.monto || 0), 0);
+  const cerradosCobrado = cerrados.reduce((a, p) => a + (p.pagado || 0), 0);
+  rs.getCell(`A${rr}`).value = 'Préstamos cerrados por renovación'; rs.getCell(`A${rr}`).font = lblFont;
+  rs.getCell(`B${rr}`).value = cerradosMonto; rs.getCell(`B${rr}`).numFmt = '#,##0.00'; rs.getCell(`B${rr}`).font = valFont;
+  rs.getCell(`C${rr}`).value = cerrados.length; rs.getCell(`D${rr}`).value = 'préstamos'; rs.getCell(`D${rr}`).font = lblFont;
+  rr++;
+  rs.getCell(`A${rr}`).value = 'Cobrado de préstamos cerrados'; rs.getCell(`A${rr}`).font = lblFont;
+  rs.getCell(`B${rr}`).value = cerradosCobrado; rs.getCell(`B${rr}`).numFmt = '#,##0.00'; rs.getCell(`B${rr}`).font = valFont;
+
+  rs.getColumn(1).width = 34; rs.getColumn(2).width = 18; rs.getColumn(3).width = 8; rs.getColumn(4).width = 12;
+
   const xlsxPath = '/tmp/reporte_creditx.xlsx';
   await wb.xlsx.writeFile(xlsxPath);
   return xlsxPath;
