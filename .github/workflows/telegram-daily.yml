@@ -14,7 +14,7 @@ jobs:
         with:
           node-version: '20'
       - name: Install dependencies
-        run: npm install firebase-admin puppeteer
+        run: npm install firebase-admin puppeteer exceljs
       - name: Enviar alerta y PDF
         env:
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
