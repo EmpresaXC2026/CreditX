@@ -51,7 +51,7 @@ function sendDocument(filePath, caption) {
     const fileHeader = Buffer.from(
       '--' + boundary + '\r\n' +
       'Content-Disposition: form-data; name="document"; filename="' + filename + '"\r\n' +
-      'Content-Type: application/pdf\r\n\r\n'
+      'Content-Type: application/octet-stream\r\n\r\n'
     );
     const bodyEnd = Buffer.from('\r\n--' + boundary + '--\r\n');
     const fullBody = Buffer.concat([bodyStart, fileHeader, fileContent, bodyEnd]);
@@ -290,6 +290,199 @@ function generarHTML(prestamos, pagos, hoy, deudas, gastos, papeleria) {
   </body></html>`;
 }
 
+async function generarExcel(prestamos, pagos, hoy) {
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'CreditX';
+
+  // Clasificar préstamos
+  const activos = [], renovaciones = [], cerrados = [];
+  for (const p of prestamos) {
+    const saldo = getSaldo(p, pagos);
+    const pagado = getPagadoReal(p, pagos);
+    const fechasCuotas = getCuotasFechas(p);
+    const vence = fechasCuotas[fechasCuotas.length - 1]?.fecha || '—';
+    const row = { ...p, saldo, pagado, vence, totalCalc: p.total || 0 };
+    if (saldo <= 0) cerrados.push(row);
+    else if (p.fecha >= '2026-04-01') renovaciones.push(row);
+    else activos.push(row);
+  }
+
+  const ws = wb.addWorksheet('Cartera Completa', { properties: { tabColor: { argb: '2E4057' } } });
+
+  // Title
+  ws.mergeCells('A1:L1');
+  const t = ws.getCell('A1');
+  t.value = 'CREDITX — REPORTE FINANCIERO DE CARTERA';
+  t.font = { bold: true, size: 14, color: { argb: 'FFFFFF' } };
+  t.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1B3A4B' } };
+  t.alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.getRow(1).height = 30;
+
+  ws.mergeCells('A2:L2');
+  const sub = ws.getCell('A2');
+  sub.value = `Generado: ${hoy} | Incluye préstamos activos y renovaciones`;
+  sub.font = { size: 9, italic: true, color: { argb: '666666' } };
+  sub.alignment = { horizontal: 'center' };
+
+  // Headers
+  const headers = ['#','Cliente','Categoría','Fecha Préstamo','Vencimiento','Días Atraso','Monto Prestado','Total c/Interés','Total Pagado','Saldo Pendiente','Mora','Estado'];
+  const hdrRow = ws.addRow(headers);
+  hdrRow.number; // row 3
+  // Add blank row 3, headers at row 4
+  ws.spliceRows(3, 0, []);
+  const hr = ws.getRow(4);
+  headers.forEach((h, i) => {
+    const c = hr.getCell(i + 1);
+    c.value = h;
+    c.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '2E4057' } };
+    c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    c.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+  });
+  ws.getRow(4).height = 26;
+
+  const fills = {
+    marzo: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E8F5E9' } },
+    renov: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3E0' } },
+    cerrado: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E3F2FD' } },
+    marzoHdr: { type: 'pattern', pattern: 'solid', fgColor: { argb: '43A047' } },
+    renovHdr: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FB8C00' } },
+    cerradoHdr: { type: 'pattern', pattern: 'solid', fgColor: { argb: '1E88E5' } },
+  };
+  const thinBorder = { top: { style: 'thin', color: { argb: 'AAAAAA' } }, bottom: { style: 'thin', color: { argb: 'AAAAAA' } }, left: { style: 'thin', color: { argb: 'AAAAAA' } }, right: { style: 'thin', color: { argb: 'AAAAAA' } } };
+
+  let num = 0;
+  function addSection(label, items, catLabel, fillRow, fillHdr) {
+    const secRow = ws.addRow([]);
+    ws.mergeCells(secRow.number, 1, secRow.number, 12);
+    const sc = secRow.getCell(1);
+    sc.value = `  ● ${label}`;
+    sc.font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
+    sc.fill = fillHdr;
+    const startRow = secRow.number + 1;
+    for (const p of items) {
+      num++;
+      const saldo = p.saldo;
+      const estado = saldo <= 0 ? 'Pagado' : 'Al día';
+      const r = ws.addRow([num, p.nombre, catLabel, p.fecha, p.vence, 0, p.monto, p.totalCalc, p.pagado, Math.max(0, saldo), 0, estado]);
+      for (let c = 1; c <= 12; c++) {
+        const cell = r.getCell(c);
+        cell.fill = fillRow;
+        cell.border = thinBorder;
+        cell.font = { name: 'Arial', size: 10 };
+        if ([7,8,9,10,11].includes(c)) cell.numFmt = '#,##0.00';
+        if ([1,6,12].includes(c)) cell.alignment = { horizontal: 'center' };
+      }
+    }
+    return { startRow, endRow: ws.lastRow.number };
+  }
+
+  const s1 = addSection('PRÉSTAMOS ACTIVOS — ORIGINADOS EN MARZO', activos, 'Activo Marzo', fills.marzo, fills.marzoHdr);
+  const s2 = addSection('PRÉSTAMOS ACTIVOS — RENOVACIONES ABRIL', renovaciones, 'Renovación', fills.renov, fills.renovHdr);
+  const s3 = addSection('PRÉSTAMOS CERRADOS POR RENOVACIÓN', cerrados, 'Cerrado x Renov.', fills.cerrado, fills.cerradoHdr);
+
+  // Totals
+  ws.addRow([]);
+  const totHdrRow = ws.addRow([]);
+  ws.mergeCells(totHdrRow.number, 1, totHdrRow.number, 12);
+  const th = totHdrRow.getCell(1);
+  th.value = '  TOTALES GENERALES';
+  th.font = { bold: true, size: 12, color: { argb: 'FFFFFF' } };
+  th.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1B3A4B' } };
+
+  const grayFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D5D5D5' } };
+  const sections = [
+    { label: `Activos Marzo (${activos.length})`, ...s1, fill: fills.marzo },
+    { label: `Renovaciones Abril (${renovaciones.length})`, ...s2, fill: fills.renov },
+    { label: `Cerrados x Renov. (${cerrados.length})`, ...s3, fill: fills.cerrado },
+  ];
+  const sumRows = [];
+  for (const sec of sections) {
+    const r = ws.addRow([]);
+    r.getCell(2).value = sec.label;
+    r.getCell(2).font = { bold: true, name: 'Arial', size: 10 };
+    r.getCell(2).fill = sec.fill;
+    for (const col of [7,8,9,10,11]) {
+      const letter = String.fromCharCode(64 + col);
+      const c = r.getCell(col);
+      c.value = { formula: `SUM(${letter}${sec.startRow}:${letter}${sec.endRow})` };
+      c.numFmt = '#,##0.00';
+      c.font = { bold: true, name: 'Arial', size: 10 };
+      c.border = thinBorder;
+      c.fill = sec.fill;
+    }
+    sumRows.push(r.number);
+  }
+  // Gran total
+  const gt = ws.addRow([]);
+  gt.getCell(2).value = 'GRAN TOTAL';
+  gt.getCell(2).font = { bold: true, name: 'Arial', size: 11 };
+  for (let col = 1; col <= 12; col++) {
+    gt.getCell(col).fill = grayFill;
+    gt.getCell(col).border = { top: { style: 'medium' }, bottom: { style: 'medium' }, left: { style: 'thin' }, right: { style: 'thin' } };
+  }
+  for (const col of [7,8,9,10,11]) {
+    const letter = String.fromCharCode(64 + col);
+    const c = gt.getCell(col);
+    c.value = { formula: `${letter}${sumRows[0]}+${letter}${sumRows[1]}+${letter}${sumRows[2]}` };
+    c.numFmt = '#,##0.00';
+    c.font = { bold: true, name: 'Arial', size: 11 };
+  }
+  const gtRow = gt.number;
+
+  // Rentabilidad section
+  ws.addRow([]);
+  const rentHdr = ws.addRow([]);
+  ws.mergeCells(rentHdr.number, 1, rentHdr.number, 12);
+  const rh = rentHdr.getCell(1);
+  rh.value = '  ANÁLISIS DE RENTABILIDAD';
+  rh.font = { bold: true, size: 12, color: { argb: 'FFFFFF' } };
+  rh.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1B3A4B' } };
+
+  const metrics = [
+    ['Capital Total Colocado', `G${gtRow}`],
+    ['Interés Total Generado', `H${gtRow}-G${gtRow}`],
+    ['Tasa de Interés Promedio', `(H${gtRow}-G${gtRow})/G${gtRow}`],
+    ['Total Cobrado', `I${gtRow}`],
+    ['Saldo por Cobrar', `J${gtRow}`],
+    ['% Recuperación', `I${gtRow}/H${gtRow}`],
+  ];
+  for (const [lbl, formula] of metrics) {
+    const r = ws.addRow([]);
+    ws.mergeCells(r.number, 2, r.number, 4);
+    ws.mergeCells(r.number, 5, r.number, 7);
+    r.getCell(2).value = lbl;
+    r.getCell(2).font = { bold: true, name: 'Arial', size: 10 };
+    r.getCell(2).border = thinBorder;
+    const c = r.getCell(5);
+    c.value = { formula };
+    c.font = { bold: true, name: 'Arial', size: 11, color: { argb: '1B3A4B' } };
+    c.border = thinBorder;
+    c.numFmt = lbl.includes('%') || lbl.includes('Tasa') ? '0.0%' : '#,##0.00';
+  }
+
+  // Leyenda
+  ws.addRow([]);
+  const legRow = ws.addRow([]);
+  legRow.getCell(2).value = 'LEYENDA DE COLORES:';
+  legRow.getCell(2).font = { bold: true, name: 'Arial', size: 10 };
+  for (const [lbl, fill] of [['Verde — Activos originados en Marzo', fills.marzo], ['Naranja — Renovaciones de Abril', fills.renov], ['Azul — Cerrados por Renovación', fills.cerrado]]) {
+    const r = ws.addRow([]);
+    ws.mergeCells(r.number, 2, r.number, 5);
+    r.getCell(2).value = lbl;
+    r.getCell(2).font = { name: 'Arial', size: 9 };
+    r.getCell(2).fill = fill;
+  }
+
+  // Column widths
+  [4,22,16,15,14,12,16,16,15,16,10,10].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+  const xlsxPath = '/tmp/reporte_creditx.xlsx';
+  await wb.xlsx.writeFile(xlsxPath);
+  return xlsxPath;
+}
+
 (async () => {
   try {
     const snap = await db.collection('datos').doc('principal').get();
@@ -332,6 +525,11 @@ function generarHTML(prestamos, pagos, hoy, deudas, gastos, papeleria) {
     // Enviar PDF por Telegram
     await sendDocument(pdfPath, 'Reporte CreditX — ' + fechaLabel);
     console.log('PDF enviado OK');
+
+    // Generar y enviar Excel
+    const xlsxPath = await generarExcel(prestamos, pagos, hoy);
+    await sendDocument(xlsxPath, 'Excel CreditX — ' + fechaLabel);
+    console.log('Excel enviado OK');
 
     // También enviar resumen de cobros del día
     const cobrosHoy = [], cobrosManana = [], atrasados = [];
