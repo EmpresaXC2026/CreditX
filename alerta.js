@@ -658,33 +658,33 @@ async function generarExcel(prestamos, pagos, hoy) {
       const cuotasVencidas = fechasCuotas.filter((fc, idx) => fc.fecha < hoy && idx >= pagosRealizados);
       if (!proximaCuota) continue;
       if (cuotasVencidas.length > 0) {
-        atrasados.push({ nombre: p.nombre, saldo: saldo });
+        const diasAtraso = Math.floor((new Date(hoy + 'T12:00:00') - new Date(cuotasVencidas[0].fecha + 'T12:00:00')) / 86400000);
+        atrasados.push({ nombre: p.nombre, saldo: saldo, cuota: p.cuota || 0, diasAtraso });
       } else if (proximaCuota.fecha === hoy) {
         cobrosHoy.push({ nombre: p.nombre, cuota: p.cuota || 0 });
       }
     }
 
-    // Mensaje 1: COBRAR HOY
+    // Mensaje 1: COBROS DE HOY
     if (cobrosHoy.length) {
-      const totalHoy = cobrosHoy.reduce((a, c) => a + c.cuota, 0);
-      let msg = '*RESUMEN DEL DIA*\n' + fechaLabel + '\n\n';
-      msg += '*COBRAR HOY (' + cobrosHoy.length + ')*\n';
-      msg += '————————————————\n\n';
-      cobrosHoy.forEach((c, i) => {
-        msg += (i + 1) + '. *' + c.nombre + '*\n';
-        msg += 'Cuota — Q ' + c.cuota.toFixed(2) + '\n\n';
+      const diaLabel = new Date(hoy + 'T12:00:00').toLocaleDateString('es-GT', {
+        weekday: 'long', day: 'numeric', month: 'long'
       });
-      msg += '_Total hoy: Q ' + totalHoy.toFixed(2) + '_';
+      // Capitalizar primera letra
+      const diaLabelCap = diaLabel.charAt(0).toUpperCase() + diaLabel.slice(1);
+      let msg = diaLabelCap + '\n\nCOBROS DE HOY\n\n';
+      cobrosHoy.forEach((c, i) => {
+        msg += (i + 1) + '. *' + c.nombre + '* — Q.' + c.cuota.toFixed(2) + '\n\n';
+      });
       await send(msg);
     }
 
     // Mensaje 2: PAGOS ATRASADOS
     if (atrasados.length) {
-      let msg = '*PAGOS ATRASADOS (' + atrasados.length + ')*\n';
-      msg += '————————————————\n\n';
+      let msg = 'PAGOS ATRASADOS\n\n';
       atrasados.forEach((c, i) => {
-        msg += (i + 1) + '. *' + c.nombre + '*\n';
-        msg += 'Cuota — ' + fmtQ(c.saldo) + '\n\n';
+        const diasStr = c.diasAtraso + ' dia' + (c.diasAtraso !== 1 ? 's' : '') + ' de atraso';
+        msg += (i + 1) + '. *' + c.nombre + '* — Q.' + (c.cuota || 0).toFixed(2) + ' — ' + diasStr + '\n\n';
       });
       await send(msg);
     }
