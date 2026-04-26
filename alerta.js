@@ -667,27 +667,25 @@ async function generarExcel(prestamos, pagos, hoy) {
     // Mensaje 1: COBRAR HOY
     if (cobrosHoy.length) {
       const totalHoy = cobrosHoy.reduce((a, c) => a + c.cuota, 0);
-      let msg = fechaLabel + '\n\n';
-      msg += 'COBRAR HOY\n';
-      msg += '──────────────────\n';
+      let msg = '*RESUMEN DEL DIA*\n' + fechaLabel + '\n\n';
+      msg += '*COBRAR HOY (' + cobrosHoy.length + ')*\n';
+      msg += '————————————————\n\n';
       cobrosHoy.forEach((c, i) => {
         msg += (i + 1) + '. *' + c.nombre + '*\n';
-        msg += '   Cuota Q ' + c.cuota.toFixed(2) + '\n';
+        msg += 'Cuota — Q ' + c.cuota.toFixed(2) + '\n\n';
       });
-      msg += '\n💰 *Total hoy: Q ' + totalHoy.toFixed(2) + '*\n\n';
-      msg += '_CreditX — Soluciones Financieras_';
+      msg += '_Total hoy: Q ' + totalHoy.toFixed(2) + '_';
       await send(msg);
     }
 
-    // Mensaje 2: ATRASADOS
+    // Mensaje 2: PAGOS ATRASADOS
     if (atrasados.length) {
-      let msg = 'ATRASADOS\n';
-      msg += '──────────────────\n';
+      let msg = '*PAGOS ATRASADOS (' + atrasados.length + ')*\n';
+      msg += '————————————————\n\n';
       atrasados.forEach((c, i) => {
         msg += (i + 1) + '. *' + c.nombre + '*\n';
-        msg += '   Saldo: ' + fmtQ(c.saldo) + '\n';
+        msg += 'Cuota — ' + fmtQ(c.saldo) + '\n\n';
       });
-      msg += '\n_CreditX — Soluciones Financieras_';
       await send(msg);
     }
 
