@@ -647,8 +647,8 @@ async function generarExcel(prestamos, pagos, hoy) {
     await sendDocument(xlsxPath, 'Excel CreditX — ' + fechaLabel);
     console.log('Excel enviado OK');
 
-    // También enviar resumen de cobros del día
-    const cobrosHoy = [], cobrosManana = [], atrasados = [];
+    // Enviar mensajes de cobros del día y atrasados
+    const cobrosHoy = [], atrasados = [];
     for (const p of prestamos) {
       const saldo = getSaldo(p, pagos);
       if (saldo <= 0) continue;
@@ -657,31 +657,37 @@ async function generarExcel(prestamos, pagos, hoy) {
       const proximaCuota = fechasCuotas[pagosRealizados];
       const cuotasVencidas = fechasCuotas.filter((fc, idx) => fc.fecha < hoy && idx >= pagosRealizados);
       if (!proximaCuota) continue;
-      const info = p.nombre + (p.telefono ? ' | ' + p.telefono : '') + '\n   Q ' + (p.cuota || 0).toFixed(2) + ' | Saldo: ' + fmtQ(saldo);
-      if (cuotasVencidas.length > 0) atrasados.push(p.nombre + ' | Saldo: ' + fmtQ(saldo));
-      else if (proximaCuota.fecha === hoy) cobrosHoy.push(info);
-      else if (proximaCuota.fecha === manana) cobrosManana.push(info);
+      if (cuotasVencidas.length > 0) {
+        atrasados.push({ nombre: p.nombre, saldo: saldo });
+      } else if (proximaCuota.fecha === hoy) {
+        cobrosHoy.push({ nombre: p.nombre, cuota: p.cuota || 0 });
+      }
     }
 
-    if (cobrosHoy.length || cobrosManana.length || atrasados.length) {
-      let msg = 'RESUMEN DEL DIA - CreditX\n' + fechaLabel + '\n\n';
-      if (cobrosHoy.length) {
-        const total = cobrosHoy.reduce((a, info) => { const m = info.match(/Q ([\d,.]+) \|/); return a + (m ? parseFloat(m[1].replace(',','')) : 0); }, 0);
-        msg += 'COBRAR HOY (' + cobrosHoy.length + ')\n';
-        cobrosHoy.forEach((info, i) => { msg += (i + 1) + '. ' + info + '\n'; });
-        msg += 'Total hoy: Q ' + total.toFixed(2) + '\n\n';
-      }
-      if (cobrosManana.length) {
-        const total = cobrosManana.reduce((a, info) => { const m = info.match(/Q ([\d,.]+) \|/); return a + (m ? parseFloat(m[1].replace(',','')) : 0); }, 0);
-        msg += 'COBRAR MANANA (' + cobrosManana.length + ')\n';
-        cobrosManana.forEach((info, i) => { msg += (i + 1) + '. ' + info + '\n'; });
-        msg += 'Total manana: Q ' + total.toFixed(2) + '\n\n';
-      }
-      if (atrasados.length) {
-        msg += 'ATRASADOS (' + atrasados.length + ')\n';
-        atrasados.forEach((info, i) => { msg += (i + 1) + '. ' + info + '\n'; });
-      }
-      msg += '\nCreditX Soluciones Financieras';
+    // Mensaje 1: COBRAR HOY
+    if (cobrosHoy.length) {
+      const totalHoy = cobrosHoy.reduce((a, c) => a + c.cuota, 0);
+      let msg = fechaLabel + '\n\n';
+      msg += 'COBRAR HOY\n';
+      msg += '──────────────────\n';
+      cobrosHoy.forEach((c, i) => {
+        msg += (i + 1) + '. *' + c.nombre + '*\n';
+        msg += '   Cuota Q ' + c.cuota.toFixed(2) + '\n';
+      });
+      msg += '\n💰 *Total hoy: Q ' + totalHoy.toFixed(2) + '*\n\n';
+      msg += '_CreditX — Soluciones Financieras_';
+      await send(msg);
+    }
+
+    // Mensaje 2: ATRASADOS
+    if (atrasados.length) {
+      let msg = 'ATRASADOS\n';
+      msg += '──────────────────\n';
+      atrasados.forEach((c, i) => {
+        msg += (i + 1) + '. *' + c.nombre + '*\n';
+        msg += '   Saldo: ' + fmtQ(c.saldo) + '\n';
+      });
+      msg += '\n_CreditX — Soluciones Financieras_';
       await send(msg);
     }
 
