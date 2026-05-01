@@ -75,6 +75,218 @@ function sendDocument(filePath, caption) {
   });
 }
 
+function sendPhoto(filePath, caption) {
+  return new Promise((resolve, reject) => {
+    const fileContent = fs.readFileSync(filePath);
+    const boundary = '----FormBoundary' + Date.now();
+    const filename = path.basename(filePath);
+
+    let body = '';
+    body += '--' + boundary + '\r\n';
+    body += 'Content-Disposition: form-data; name="chat_id"\r\n\r\n';
+    body += chatId + '\r\n';
+    body += '--' + boundary + '\r\n';
+    body += 'Content-Disposition: form-data; name="caption"\r\n\r\n';
+    body += (caption || '') + '\r\n';
+
+    const bodyStart = Buffer.from(body);
+    const fileHeader = Buffer.from(
+      '--' + boundary + '\r\n' +
+      'Content-Disposition: form-data; name="photo"; filename="' + filename + '"\r\n' +
+      'Content-Type: image/png\r\n\r\n'
+    );
+    const bodyEnd = Buffer.from('\r\n--' + boundary + '--\r\n');
+    const fullBody = Buffer.concat([bodyStart, fileHeader, fileContent, bodyEnd]);
+
+    const req = https.request({
+      hostname: 'api.telegram.org',
+      path: '/bot' + token + '/sendPhoto',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'multipart/form-data; boundary=' + boundary,
+        'Content-Length': fullBody.length
+      }
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(JSON.parse(data)));
+    });
+    req.on('error', reject);
+    req.write(fullBody);
+    req.end();
+  });
+}
+
+function generarHTMLCalendario(cobrosHoy, atrasados, hoy) {
+  const fechaLabel = new Date(hoy + 'T12:00:00').toLocaleDateString('es-GT', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+  });
+  const fechaLabelCap = fechaLabel.charAt(0).toUpperCase() + fechaLabel.slice(1);
+
+  const totalHoy = cobrosHoy.reduce((a, c) => a + c.cuota, 0);
+  const totalAtrasado = atrasados.reduce((a, c) => a + c.cuota, 0);
+
+  const filasHoy = cobrosHoy.map(c => `
+    <div class="cliente-row">
+      <div class="cliente-nombre">${c.nombre}</div>
+      <div class="cliente-cuota">Q ${c.cuota.toFixed(2)}</div>
+    </div>
+  `).join('');
+
+  const filasAtrasados = atrasados.map(c => `
+    <div class="cliente-row atrasado">
+      <div class="cliente-nombre">
+        ${c.nombre}
+        <span class="dias-badge">⚠ ${c.diasAtraso} día${c.diasAtraso !== 1 ? 's' : ''}</span>
+      </div>
+      <div class="cliente-cuota rojo">Q ${c.cuota.toFixed(2)}</div>
+    </div>
+  `).join('');
+
+  const seccionAtrasados = atrasados.length > 0 ? `
+    <div class="seccion atrasada">
+      <div class="seccion-header rojo-header">
+        <span class="seccion-fecha">ATRASADOS</span>
+        <span class="seccion-total rojo">Q ${totalAtrasado.toFixed(2)}</span>
+      </div>
+      ${filasAtrasados}
+    </div>
+  ` : '';
+
+  const seccionHoy = cobrosHoy.length > 0 ? `
+    <div class="seccion">
+      <div class="seccion-header verde-header">
+        <span class="seccion-fecha">${fechaLabelCap}</span>
+        <span class="seccion-total verde">Q ${totalHoy.toFixed(2)}</span>
+      </div>
+      <div class="hoy-badge">● HOY</div>
+      ${filasHoy}
+    </div>
+  ` : '';
+
+  const sinCobros = cobrosHoy.length === 0 && atrasados.length === 0 ? `
+    <div class="sin-cobros">Sin cobros para hoy</div>
+  ` : '';
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #181818;
+      font-family: 'Arial', sans-serif;
+      padding: 24px;
+      width: 420px;
+    }
+    .card {
+      background: #232323;
+      border-radius: 18px;
+      padding: 22px 20px 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    .titulo {
+      font-size: 20px;
+      font-weight: 900;
+      color: #fff;
+      margin-bottom: 4px;
+      letter-spacing: 0.5px;
+    }
+    .titulo span { color: #00c97a; }
+    .subtitulo {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 20px;
+    }
+    .seccion {
+      background: #2a2a2a;
+      border-radius: 12px;
+      margin-bottom: 14px;
+      overflow: hidden;
+      border: 1px solid #333;
+    }
+    .seccion.atrasada {
+      border-color: #c0392b55;
+    }
+    .seccion-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px 8px;
+      border-bottom: 1px solid #333;
+    }
+    .verde-header { border-left: 3px solid #00c97a; }
+    .rojo-header  { border-left: 3px solid #e74c3c; }
+    .seccion-fecha {
+      font-size: 13px;
+      font-weight: 700;
+      color: #f0a500;
+    }
+    .rojo-header .seccion-fecha { color: #e74c3c; }
+    .seccion-total {
+      font-size: 15px;
+      font-weight: 900;
+    }
+    .verde { color: #00c97a; }
+    .rojo  { color: #e74c3c; }
+    .hoy-badge {
+      font-size: 11px;
+      font-weight: 700;
+      color: #f0a500;
+      padding: 4px 16px 6px;
+      letter-spacing: 1px;
+    }
+    .cliente-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 16px;
+      border-bottom: 1px solid #333;
+    }
+    .cliente-row:last-child { border-bottom: none; }
+    .cliente-nombre {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .dias-badge {
+      font-size: 10px;
+      font-weight: 600;
+      color: #e74c3c;
+    }
+    .cliente-cuota {
+      font-size: 15px;
+      font-weight: 900;
+      color: #f0a500;
+    }
+    .cliente-cuota.rojo { color: #e74c3c; }
+    .sin-cobros {
+      text-align: center;
+      color: #666;
+      font-size: 13px;
+      padding: 20px;
+    }
+    .footer {
+      text-align: center;
+      font-size: 10px;
+      color: #555;
+      margin-top: 10px;
+    }
+    .footer span { color: #00c97a; font-weight: 700; }
+  </style>
+  </head><body>
+  <div class="card">
+    <div class="titulo">CREDIT<span>X</span></div>
+    <div class="subtitulo">Cobros del día</div>
+    ${seccionAtrasados}
+    ${seccionHoy}
+    ${sinCobros}
+    <div class="footer">Generado por <span>CreditX</span> — ${fechaLabelCap}</div>
+  </div>
+  </body></html>`;
+}
+
 function getCuotasFechas(p) {
   const esDiario    = p.frecuencia === 'diario';
   const esSemanal   = p.frecuencia === 'semanal';
@@ -649,6 +861,7 @@ async function generarExcel(prestamos, pagos, hoy) {
 
     // Enviar mensajes de cobros del día y atrasados
     const cobrosHoy = [], atrasados = [];
+    // (se llena abajo, se usa también para la imagen)
     for (const p of prestamos) {
       const saldo = getSaldo(p, pagos);
       if (saldo <= 0) continue;
@@ -664,6 +877,22 @@ async function generarExcel(prestamos, pagos, hoy) {
         cobrosHoy.push({ nombre: p.nombre, cuota: p.cuota || 0 });
       }
     }
+
+    // Generar y enviar imagen PNG del calendario de cobros
+    const htmlCalendario = generarHTMLCalendario(cobrosHoy, atrasados, hoy);
+    const htmlCalPath = '/tmp/calendario.html';
+    const pngCalPath = '/tmp/calendario.png';
+    fs.writeFileSync(htmlCalPath, htmlCalendario);
+
+    const browser2 = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    const page2 = await browser2.newPage();
+    await page2.setViewport({ width: 468, height: 800, deviceScaleFactor: 2 });
+    await page2.goto('file://' + htmlCalPath, { waitUntil: 'networkidle0' });
+    await page2.screenshot({ path: pngCalPath, fullPage: true });
+    await browser2.close();
+
+    await sendPhoto(pngCalPath, '📅 Cobros de hoy — ' + fechaLabel);
+    console.log('Imagen calendario enviada OK');
 
     // Mensaje 1: COBROS DE HOY
     if (cobrosHoy.length) {
