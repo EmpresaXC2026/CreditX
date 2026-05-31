@@ -2317,8 +2317,8 @@ tbody tr:hover td {
         </div>
       </div>
 
-      <!-- Formulario registrar débito -->
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;">
+      <!-- Formulario registrar débito (solo admin/cobrador) -->
+      <div id="bancoFormRegistro" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;">
         <div class="form-group" style="flex:1;min-width:130px;margin-bottom:0;">
           <label>Fecha</label>
           <input type="date" id="banco_fecha" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:'DM Mono',monospace;font-size:13px;width:100%;box-sizing:border-box;outline:none;">
@@ -2902,6 +2902,8 @@ function renderGastosCard() {
   const totalGastos = gastos.reduce((a, g) => a + (g.monto || 0), 0);
   if (!totalGastos && !gastos.length) return '';
 
+  const esVisorCard = (window.userRole || 'cobrador') === 'visor';
+
   const listaGastos = gastos.length
     ? [...gastos].sort((a, b) => b.fecha.localeCompare(a.fecha)).map(g => `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.06);">
@@ -2911,7 +2913,7 @@ function renderGastosCard() {
           </div>
           <div style="display:flex;align-items:center;gap:8px;">
             <span style="font-family:'DM Mono',monospace;font-size:13px;font-weight:700;color:#e53935;">-${fmtQ(g.monto)}</span>
-            <button onclick="eliminarGasto('${g.id}')" style="background:rgba(240,85,85,0.12);border:1px solid var(--danger);color:var(--danger);border-radius:6px;padding:2px 6px;font-size:10px;cursor:pointer;">✕</button>
+            ${esVisorCard ? '' : `<button onclick="eliminarGasto('${g.id}')" style="background:rgba(240,85,85,0.12);border:1px solid var(--danger);color:var(--danger);border-radius:6px;padding:2px 6px;font-size:10px;cursor:pointer;">✕</button>`}
           </div>
         </div>
       `).join('')
@@ -2927,11 +2929,12 @@ function renderGastosCard() {
         <span style="font-family:'DM Mono',monospace;font-size:16px;font-weight:900;color:#e53935;">-${fmtQ(totalGastos)}</span>
       </div>
       ${listaGastos}
+      ${esVisorCard ? '' : `
       <div style="display:flex;gap:6px;margin-top:10px;">
         <input type="text" id="gasto_desc" placeholder="Concepto" style="flex:1;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;">
         <input type="number" id="gasto_monto" placeholder="Monto" style="width:80px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;font-family:'DM Mono',monospace;">
         <button onclick="registrarGasto()" style="background:#ff9800;color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">+ Agregar</button>
-      </div>
+      </div>`}
     </div>
   `;
 }
@@ -3024,6 +3027,7 @@ function renderBancoHistorial() {
   // Ordenar por fecha desc (más reciente primero)
   const sorted = [...deudas].sort((a, b) => b.fecha.localeCompare(a.fecha));
 
+  const esVisorBanco = (window.userRole || 'cobrador') === 'visor';
   body.innerHTML = sorted.map((d, i) => `
     <tr>
       <td style="color:var(--muted);font-size:12px;">${sorted.length - i}</td>
@@ -3031,7 +3035,7 @@ function renderBancoHistorial() {
       <td style="font-size:13px;">${d.desc}</td>
       <td style="text-align:right;font-family:'DM Mono',monospace;font-weight:700;color:#e53935;">${fmtQ(d.monto)}</td>
       <td style="text-align:center;">
-        <button onclick="eliminarDebitoBanco('${d.id}')" style="background:rgba(240,85,85,0.12);border:1px solid var(--danger);color:var(--danger);border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;"><svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;display:inline-block;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+        ${esVisorBanco ? '' : `<button onclick="eliminarDebitoBanco('${d.id}')" style="background:rgba(240,85,85,0.12);border:1px solid var(--danger);color:var(--danger);border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;"><svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;display:inline-block;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>`}
       </td>
     </tr>
   `).join('');
@@ -3116,6 +3120,10 @@ function aplicarPermisos() {
     const label = esAdmin ? '<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;display:inline-block;"><path d="M2 20h20L19 8l-5 6-2-8-2 8-5-6z"/></svg> Admin' : esVisor ? '<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;display:inline-block;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Visor' : '<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;display:inline-block;"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg> Cobrador';
     badge.textContent = (window.userEmail || '') + ' — ' + label;
   }
+
+  // Ocultar formulario de registro banco para visor
+  const bancoForm = document.getElementById('bancoFormRegistro');
+  if (bancoForm) bancoForm.style.display = esVisor ? 'none' : 'flex';
 
   // Redirigir según rol
   if (esAdmin) showTab('dashboard');
@@ -4536,10 +4544,10 @@ function renderTable() {
 
       <!-- Botones -->
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:${esAdmin ? '6px' : '0'};">
-        <button onclick="abrirModalPago('${p.id}')"
+        ${esVisor ? '' : `<button onclick="abrirModalPago('${p.id}')"
           style="background:#00c97a;border:none;border-radius:6px;padding:7px 12px;color:#000;font-family:'Syne',sans-serif;font-size:11px;font-weight:800;cursor:pointer;">
           <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;display:inline-block;"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg> Registrar Pago
-        </button>
+        </button>`}
         <button onclick="verHistorialId('${p.id}')"
           style="background:#212121;border:1px solid #2e2e2e;border-radius:6px;padding:7px 12px;font-size:11px;font-weight:600;color:#888;cursor:pointer;font-family:'Syne',sans-serif;">
           <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;display:inline-block;"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg> Historial
