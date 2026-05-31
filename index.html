@@ -1913,7 +1913,7 @@ tbody tr:hover td {
         <table id="dashTable">
           <thead>
             <tr>
-              <th>Cliente</th>
+              <th>Cliente / Ingreso</th>
               <th>Monto</th>
               <th>Interés</th>
               <th>Total</th>
@@ -3638,7 +3638,7 @@ function renderDashboard() {
     const pct = Math.min(100, (pagado / p.total) * 100);
     const badge = estado === 'Pagado' ? 'badge-paid' : estado === 'Atrasado' ? 'badge-late' : 'badge-ok';
     return `<tr>
-      <td><strong>${p.nombre}</strong></td>
+      <td><strong>${p.nombre}</strong>${p.fecha ? `<div style="font-size:11px;color:var(--muted);margin-top:2px;">📅 ${p.fecha}</div>` : ''}</td>
       <td class="mono">${fmtQ(p.monto)}</td>
       <td class="mono" style="color:var(--accent2)">${p.tasa}%</td>
       <td class="mono">${fmtQ(p.total)}</td>
