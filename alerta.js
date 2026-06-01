@@ -736,7 +736,108 @@ async function generarExcel(prestamos, pagos, hoy) {
   // Column widths
   [4,22,16,15,14,12,16,16,15,16,10,10].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
-  // ========== HOJA 2: DETALLE RENOVACIONES ==========
+  // ========== HOJA 2: PRÉSTAMOS ACTIVOS ==========
+  const wa = wb.addWorksheet('Préstamos Activos', { properties: { tabColor: { argb: '27AE60' } } });
+
+  wa.mergeCells('A1:L1');
+  const waTitle = wa.getCell('A1');
+  waTitle.value = 'CREDITX — PRÉSTAMOS ACTIVOS';
+  waTitle.font = { bold: true, size: 14, color: { argb: 'FFFFFF' } };
+  waTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '27AE60' } };
+  waTitle.alignment = { horizontal: 'center', vertical: 'middle' };
+  wa.getRow(1).height = 30;
+
+  wa.mergeCells('A2:L2');
+  const waSub = wa.getCell('A2');
+  waSub.value = `Generado: ${hoy} | Solo préstamos con saldo pendiente`;
+  waSub.font = { size: 9, italic: true, color: { argb: '666666' } };
+  waSub.alignment = { horizontal: 'center' };
+
+  const waHeaders = ['#','Cliente','Categoría','Fecha Préstamo','Vencimiento','Días Atraso','Monto Prestado','Total c/Interés','Total Pagado','Saldo Pendiente','Mora','Estado'];
+  const waHr = wa.addRow(waHeaders);
+  waHr.eachCell((c) => {
+    c.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '2E4057' } };
+    c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    c.border = thinBorder;
+  });
+  wa.getRow(3).height = 26;
+
+  const waActivos = [...activos, ...renovaciones]; // todos con saldo > 0
+  const waFillActivo  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E8F5E9' } };
+  const waFillRenov   = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3E0' } };
+  const waFillHdrActivo = { type: 'pattern', pattern: 'solid', fgColor: { argb: '43A047' } };
+  const waFillHdrRenov  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FB8C00' } };
+
+  function addWaSection(label, items, catLabel, fillRow, fillHdr) {
+    if (items.length === 0) return { startRow: null, endRow: null };
+    const secRow = wa.addRow([]);
+    wa.mergeCells(secRow.number, 1, secRow.number, 12);
+    const sc = secRow.getCell(1);
+    sc.value = `  ● ${label}`;
+    sc.font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
+    sc.fill = fillHdr;
+    const startRow = secRow.number + 1;
+    let waNum2 = 0;
+    for (const p of items) {
+      waNum2++;
+      const saldo = p.saldo;
+      const estado = saldo <= 0 ? 'Pagado' : 'Al día';
+      const pagosRealizados2 = pagos.filter(pg => pg.prestamoId === p.id && !pg.soloIncumplimiento).length;
+      const fechasCuotas2 = getCuotasFechas(p);
+      const cuotasVencidas2 = fechasCuotas2.filter((fc, idx) => fc.fecha < hoy && idx >= pagosRealizados2);
+      const diasAtraso2 = cuotasVencidas2.length > 0
+        ? Math.floor((new Date(hoy + 'T12:00:00') - new Date(cuotasVencidas2[0].fecha + 'T12:00:00')) / 86400000)
+        : 0;
+      const estadoFinal = cuotasVencidas2.length > 0 ? 'Atrasado' : (saldo <= 0 ? 'Pagado' : 'Al día');
+      const r = wa.addRow([waNum2, p.nombre, catLabel, p.fecha, p.vence, diasAtraso2, p.monto, p.totalCalc, p.pagado, Math.max(0, saldo), 0, estadoFinal]);
+      r.eachCell((cell, ci) => {
+        cell.fill = fillRow;
+        cell.border = thinBorder;
+        cell.font = { name: 'Arial', size: 10 };
+        if ([7,8,9,10,11].includes(ci)) cell.numFmt = '#,##0.00';
+        if ([1,6,12].includes(ci)) cell.alignment = { horizontal: 'center' };
+        if (ci === 12 && estadoFinal === 'Atrasado') cell.font = { name: 'Arial', size: 10, color: { argb: 'E74C3C' } };
+      });
+    }
+    return { startRow, endRow: wa.lastRow.number };
+  }
+
+  const wa1 = addWaSection('PRÉSTAMOS ACTIVOS — ORIGINADOS EN MARZO', activos, 'Activo Marzo', waFillActivo, waFillHdrActivo);
+  const wa2 = addWaSection('PRÉSTAMOS ACTIVOS — RENOVACIONES ABRIL', renovaciones, 'Renovación', waFillRenov, waFillHdrRenov);
+
+  // Totals
+  wa.addRow([]);
+  const waTotHdr = wa.addRow([]);
+  wa.mergeCells(waTotHdr.number, 1, waTotHdr.number, 12);
+  waTotHdr.getCell(1).value = '  TOTALES — PRÉSTAMOS ACTIVOS';
+  waTotHdr.getCell(1).font = { bold: true, size: 12, color: { argb: 'FFFFFF' } };
+  waTotHdr.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '27AE60' } };
+
+  for (const { label, sec, fill } of [
+    { label: `Activos Marzo (${activos.length})`, sec: wa1, fill: waFillActivo },
+    { label: `Renovaciones Abril (${renovaciones.length})`, sec: wa2, fill: waFillRenov },
+  ]) {
+    if (!sec.startRow) continue;
+    const r = wa.addRow([]);
+    r.getCell(2).value = label;
+    r.getCell(2).font = { bold: true, name: 'Arial', size: 10 };
+    r.getCell(2).fill = fill;
+    for (const col of [7,8,9,10,11]) {
+      const letter = String.fromCharCode(64 + col);
+      const c = r.getCell(col);
+      c.value = { formula: `SUM(${letter}${sec.startRow}:${letter}${sec.endRow})` };
+      c.numFmt = '#,##0.00';
+      c.font = { bold: true, name: 'Arial', size: 10 };
+      c.border = thinBorder;
+      c.fill = fill;
+    }
+  }
+
+  [4,22,16,15,14,12,16,16,15,16,10,10].forEach((w, i) => { wa.getColumn(i + 1).width = w; });
+  wa.views = [{ state: 'frozen', ySplit: 3 }];
+
+  // ========== HOJA 3: DETALLE RENOVACIONES ==========
   const wr = wb.addWorksheet('Detalle Renovaciones', { properties: { tabColor: { argb: 'FB8C00' } } });
   wr.mergeCells('A1:H1');
   const wrTitle = wr.getCell('A1');
@@ -790,7 +891,7 @@ async function generarExcel(prestamos, pagos, hoy) {
   }
   [22,24,16,16,24,16,16,16].forEach((w, i) => { wr.getColumn(i + 1).width = w; });
 
-  // ========== HOJA 3: RESUMEN EJECUTIVO ==========
+  // ========== HOJA 4: RESUMEN EJECUTIVO ==========
   const rs = wb.addWorksheet('Resumen Ejecutivo', { properties: { tabColor: { argb: '1B3A4B' } } });
   rs.mergeCells('A1:D1');
   const rsTitle = rs.getCell('A1');
@@ -852,7 +953,7 @@ async function generarExcel(prestamos, pagos, hoy) {
 
   rs.getColumn(1).width = 34; rs.getColumn(2).width = 18; rs.getColumn(3).width = 8; rs.getColumn(4).width = 12;
 
-  // ========== HOJA 4: CERRADOS POR RENOVACIÓN ==========
+  // ========== HOJA 5: CERRADOS POR RENOVACIÓN ==========
   const wc = wb.addWorksheet('Cerrados x Renovación', { properties: { tabColor: { argb: '1E88E5' } } });
 
   wc.mergeCells('A1:L1');
@@ -968,9 +1069,10 @@ async function generarExcel(prestamos, pagos, hoy) {
       weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
     });
 
-    // Generar PDF con Puppeteer
+    // Generar PDF con Puppeteer — solo préstamos activos (saldo > 0)
     const puppeteer = require('puppeteer');
-    const htmlContent = generarHTML(prestamos, pagos, hoy, deudas, gastos, papeleria);
+    const prestamosActivos = prestamos.filter(p => getSaldo(p, pagos) > 0);
+    const htmlContent = generarHTML(prestamosActivos, pagos, hoy, deudas, gastos, papeleria);
     const htmlPath = '/tmp/reporte.html';
     const pdfPath = '/tmp/reporte.pdf';
     fs.writeFileSync(htmlPath, htmlContent);
