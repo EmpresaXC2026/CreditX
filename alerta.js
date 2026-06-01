@@ -353,18 +353,11 @@ function generarHTML(prestamos, pagos, hoy, deudas, gastos, papeleria) {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
   });
 
-  const deudaAcumulada = (deudas || []).reduce((a, d) => a + (d.monto || 0), 0);
+  let totalMonto = 0, totalPagado = 0, totalSaldo = 0, totalMora = 0;
+  let countAlDia = 0, countAtrasado = 0, countPagado = 0;
 
-  // Posición de Caja Real (igual que la app)
-  const cuotaBanco = (deudas || []).reduce((a, d) => a + (d.cuota || d.monto || 0), 0);
-  const efectivoRenov = prestamos.filter(p => p.esRenovacion).reduce((a, p) => a + (p.efectivoEntregado || 0), 0);
-  const papeleriaRenov = (papeleria || []).filter(p => p.notas && p.notas.includes('Renovación')).reduce((a, p) => a + (p.monto || 0), 0);
-  const totalGastos = (gastos || []).reduce((a, g) => a + (g.monto || 0), 0);
-
-  let totalMonto = 0, totalPagado = 0, totalSaldo = 0, countAlDia = 0, countAtrasado = 0, countPagado = 0;
-  const filas = prestamos.map((p, i) => {
+  const filasDatos = prestamos.map((p, i) => {
     const saldo = getSaldo(p, pagos);
-    // Pagado real: excluye pago sintético de cierre por renovación (igual que la app)
     const pagado = getPagadoReal(p, pagos);
     const pagosRealizados = pagos.filter(pg => pg.prestamoId === p.id && !pg.soloIncumplimiento).length;
     const fechasCuotas = getCuotasFechas(p);
@@ -372,133 +365,186 @@ function generarHTML(prestamos, pagos, hoy, deudas, gastos, papeleria) {
 
     let estado = 'Al día';
     let diasAtraso = 0;
+    let mora = 0;
     if (saldo <= 0) { estado = 'Pagado'; countPagado++; }
     else if (cuotasVencidas.length > 0) {
       estado = 'Atrasado';
       diasAtraso = Math.floor((new Date(hoy + 'T12:00:00') - new Date(cuotasVencidas[0].fecha + 'T12:00:00')) / 86400000);
+      mora = diasAtraso * (p.cuota || 0) * 0.01;
       countAtrasado++;
     } else { countAlDia++; }
 
     const vence = fechasCuotas[fechasCuotas.length - 1]?.fecha || '—';
-    // Solo suma monto en préstamos activos (igual que la app — excluye pagados/renovados)
     if (saldo > 0) totalMonto += p.monto || 0;
     totalPagado += pagado;
     totalSaldo += Math.max(0, saldo);
+    totalMora += mora;
 
+    return { i, p, saldo, pagado, diasAtraso, mora, estado, vence, cuotasVencidas };
+  });
+
+  const filas = filasDatos.map(({ i, p, saldo, pagado, diasAtraso, mora, estado, vence }) => {
     const estadoColor = estado === 'Pagado' ? '#27ae60' : estado === 'Atrasado' ? '#e74c3c' : '#2980b9';
+    const venceColor  = estado === 'Atrasado' ? '#e74c3c' : '#555';
     return `<tr>
       <td>${i + 1}</td>
       <td><strong>${p.nombre}</strong></td>
       <td>${p.fecha}</td>
-      <td style="color:${estado === 'Atrasado' ? '#e74c3c' : '#555'}">${vence}</td>
-      <td style="color:${diasAtraso > 0 ? '#e74c3c' : '#555'}">${diasAtraso > 0 ? diasAtraso + 'd' : '—'}</td>
+      <td style="color:${venceColor}">${vence}</td>
+      <td style="color:${diasAtraso > 0 ? '#e74c3c' : '#555'};font-weight:${diasAtraso > 0 ? '700' : '400'}">${diasAtraso > 0 ? diasAtraso + 'd' : '—'}</td>
       <td>${fmtQ(p.monto)}</td>
-      <td>${fmtQ(p.total)}</td>
+      <td>${fmtQ(p.total || 0)}</td>
       <td style="color:#27ae60">${fmtQ(pagado)}</td>
-      <td style="color:#e74c3c">${fmtQ(saldo)}</td>
-      <td>0.00</td>
-      <td><span style="background:${estadoColor};color:#fff;padding:2px 8px;border-radius:4px;font-size:11px">${estado}</span></td>
+      <td style="color:#e74c3c">${fmtQ(Math.max(0, saldo))}</td>
+      <td style="color:${mora > 0 ? '#e74c3c' : '#aaa'}">${mora > 0 ? fmtQ(mora) : '—'}</td>
+      <td><span style="background:${estadoColor};color:#fff;padding:2px 8px;border-radius:4px;font-size:10px">${estado}</span></td>
     </tr>`;
   }).join('');
 
-  const atrasadosList = prestamos.filter((p) => {
-    const saldo = getSaldo(p, pagos);
-    if (saldo <= 0) return false;
-    const pagosRealizados = pagos.filter(pg => pg.prestamoId === p.id && !pg.soloIncumplimiento).length;
-    const fechasCuotas = getCuotasFechas(p);
-    const cuotasVencidas = fechasCuotas.filter((fc, idx) => fc.fecha < hoy && idx >= pagosRealizados);
-    return cuotasVencidas.length > 0;
-  });
+  const atrasadosList = filasDatos.filter(d => d.estado === 'Atrasado');
 
-  const filasAtrasados = atrasadosList.map((p, i) => {
-    const saldo = getSaldo(p, pagos);
-    const pagosRealizados = pagos.filter(pg => pg.prestamoId === p.id && !pg.soloIncumplimiento).length;
-    const fechasCuotas = getCuotasFechas(p);
-    const cuotasVencidas = fechasCuotas.filter((fc, idx) => fc.fecha < hoy && idx >= pagosRealizados);
+  const filasAtrasados = atrasadosList.map(({ i, p, saldo, mora, diasAtraso, cuotasVencidas }, idx) => {
     const fechaAntigua = cuotasVencidas[0].fecha;
-    const dias = Math.floor((new Date(hoy + 'T12:00:00') - new Date(fechaAntigua + 'T12:00:00')) / 86400000);
     return `<tr>
-      <td>${i + 1}</td>
+      <td>${idx + 1}</td>
       <td>${p.nombre}</td>
       <td>${p.telefono || '—'}</td>
       <td style="color:#e74c3c">${fechaAntigua}</td>
-      <td style="color:#e74c3c">${dias} día${dias !== 1 ? 's' : ''}</td>
-      <td style="color:#e74c3c">${fmtQ(saldo)}</td>
-      <td>Q 0.00</td>
+      <td style="color:#e74c3c;font-weight:700">${diasAtraso} día${diasAtraso !== 1 ? 's' : ''}</td>
+      <td style="color:#e74c3c">${fmtQ(Math.max(0, saldo))}</td>
+      <td style="color:#e74c3c">${fmtQ(mora)}</td>
     </tr>`;
   }).join('');
 
-  const posicionCajaReal = totalPagado - cuotaBanco - efectivoRenov - papeleriaRenov - totalGastos;
-  const cajaColor = posicionCajaReal >= 0 ? '#27ae60' : '#e74c3c';
-  const cajaDesc = [
-    `Recuperado ${fmtQ(totalPagado)}`,
-    cuotaBanco > 0 ? `Banco ${fmtQ(cuotaBanco)}` : '',
-    efectivoRenov > 0 ? `Entregado renovac. ${fmtQ(efectivoRenov)}` : '',
-    papeleriaRenov > 0 ? `Papelería renovac. ${fmtQ(papeleriaRenov)}` : '',
-    totalGastos > 0 ? `Gastos ${fmtQ(totalGastos)}` : '',
-  ].filter(Boolean).join(' – ');
+  const totalAtrasadoSaldo = atrasadosList.reduce((a, d) => a + Math.max(0, d.saldo), 0);
+  const totalAtrasadoMora  = atrasadosList.reduce((a, d) => a + d.mora, 0);
+
+  // Logo SVG inline (llama de fuego + CreditX)
+  const logoSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="44" viewBox="0 0 80 44">
+    <text x="0" y="28" font-family="Arial" font-size="22" font-weight="900" fill="#c8102e">X</text>
+    <text x="18" y="28" font-family="Arial" font-size="14" font-weight="900" fill="#222">CREDIT</text>
+    <text x="18" y="40" font-family="Arial" font-size="7" fill="#888">Soluciones Financieras</text>
+    <polygon points="6,0 10,10 4,8 8,20 2,16 6,28 0,44 12,44 12,28 10,16 14,20 10,8 14,10" fill="#c8102e" opacity="0.85"/>
+  </svg>`;
 
   return `<!DOCTYPE html><html><head><meta charset="UTF-8">
   <style>
-    body { font-family: Arial, sans-serif; font-size: 12px; color: #333; margin: 20px; }
-    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #c8102e; padding-bottom: 10px; margin-bottom: 16px; }
-    .logo { font-size: 22px; font-weight: 900; color: #c8102e; }
-    .logo span { color: #333; }
-    .report-info { text-align: right; font-size: 11px; color: #666; }
-    .kpis { display: flex; gap: 10px; margin-bottom: 16px; }
-    .kpi { flex: 1; border: 1px solid #ddd; border-radius: 6px; padding: 10px; }
-    .kpi-label { font-size: 10px; color: #888; text-transform: uppercase; }
-    .kpi-value { font-size: 15px; font-weight: 700; margin-top: 4px; }
-    .badges { margin-bottom: 12px; }
-    .badge { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 11px; margin-right: 6px; }
-    h3 { font-size: 13px; margin: 16px 0 8px; color: #333; border-left: 3px solid #c8102e; padding-left: 8px; }
-    table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    th { background: #222; color: #fff; padding: 6px 8px; text-align: left; }
-    td { padding: 5px 8px; border-bottom: 1px solid #eee; }
-    tr:nth-child(even) { background: #f9f9f9; }
-    .totals td { font-weight: 700; background: #f0f0f0; border-top: 2px solid #ccc; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 11.5px; color: #222; background: #fff; padding: 18px 22px; }
+    /* HEADER */
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #c8102e; padding-bottom: 10px; margin-bottom: 14px; }
+    .logo-area { display: flex; align-items: center; gap: 8px; }
+    .logo-sub { font-size: 9px; color: #888; margin-top: 2px; }
+    .report-info { text-align: right; font-size: 10px; color: #666; line-height: 1.6; }
+    .report-info strong { font-size: 11.5px; color: #222; }
+    /* KPI CARDS */
+    .kpis { display: flex; gap: 8px; margin-bottom: 12px; }
+    .kpi { flex: 1; border: 1px solid #e0e0e0; border-radius: 6px; padding: 9px 11px; }
+    .kpi-label { font-size: 9px; color: #888; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px; }
+    .kpi-value { font-size: 16px; font-weight: 900; }
+    /* BADGES */
+    .badges { margin-bottom: 12px; display: flex; gap: 10px; align-items: center; }
+    .badge { font-size: 10.5px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    /* SECTION TITLE */
+    h3 { font-size: 12px; font-weight: 700; color: #222; border-left: 3px solid #c8102e; padding-left: 8px; margin: 14px 0 7px; }
+    /* TABLES */
+    table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+    th { background: #1a1a1a; color: #fff; padding: 5px 7px; text-align: left; font-size: 10px; font-weight: 600; }
+    td { padding: 4.5px 7px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+    tr:nth-child(even) td { background: #fafafa; }
+    .totals td { font-weight: 700; background: #f2f2f2 !important; border-top: 2px solid #ccc; font-size: 10.5px; }
+    /* PAGE BREAK before atrasados section */
+    .page-break { page-break-before: always; padding-top: 18px; }
   </style></head><body>
+
+  <!-- HEADER -->
   <div class="header">
-    <div class="logo"><span>CREDIT</span>X<br><small style="font-size:11px;font-weight:400;color:#666">Soluciones Financieras</small></div>
+    <div class="logo-area">
+      ${logoSVG}
+      <div class="logo-sub">Sistema de Gestión de Préstamos</div>
+    </div>
     <div class="report-info">
       <strong>REPORTE DE PRÉSTAMOS</strong><br>
       Generado: ${fechaLabel}<br>
       Total registros: ${prestamos.length}
     </div>
   </div>
+
+  <!-- KPI CARDS -->
   <div class="kpis">
-    <div class="kpi"><div class="kpi-label">Total Prestado</div><div class="kpi-value" style="color:#c8102e">${fmtQ(totalMonto)}</div></div>
-    <div class="kpi"><div class="kpi-label">Total Pagado</div><div class="kpi-value" style="color:#27ae60">${fmtQ(totalPagado)}</div></div>
-    <div class="kpi"><div class="kpi-label">🏦 Deuda Banco</div><div class="kpi-value" style="color:#e74c3c">- ${fmtQ(deudaAcumulada)}</div></div>
-    <div class="kpi"><div class="kpi-label">💲 Posición de Caja Real</div><div class="kpi-value" style="color:${cajaColor}">${fmtQ(posicionCajaReal)}</div><div style="font-size:8px;color:#888;margin-top:4px;">${cajaDesc}</div></div>
-    <div class="kpi"><div class="kpi-label">Saldo Pendiente</div><div class="kpi-value" style="color:#e74c3c">${fmtQ(totalSaldo)}</div></div>
+    <div class="kpi">
+      <div class="kpi-label">Total Prestado</div>
+      <div class="kpi-value" style="color:#c8102e">${fmtQ(totalMonto)}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Total Pagado</div>
+      <div class="kpi-value" style="color:#27ae60">${fmtQ(totalPagado)}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Saldo Pendiente</div>
+      <div class="kpi-value" style="color:#e74c3c">${fmtQ(totalSaldo)}</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Mora Acumulada</div>
+      <div class="kpi-value" style="color:#e67e22">${fmtQ(totalMora)}</div>
+    </div>
   </div>
-  ${deudas && deudas.length > 0 ? `
-  <h3>🏦 Historial de Deudas con Banco</h3>
-  <table>
-    <thead><tr><th>#</th><th>Fecha</th><th>Hora</th><th>Monto Deuda</th><th>Disponible</th></tr></thead>
-    <tbody>${deudas.map((d, i) => `<tr>
-      <td>${i + 1}</td>
-      <td>${d.fecha || '—'}</td>
-      <td>${d.hora || '—'}</td>
-      <td style="color:#e74c3c">- ${fmtQ(d.monto)}</td>
-      <td style="color:${(d.disponible || 0) >= 0 ? '#27ae60' : '#e74c3c'}">${fmtQ(d.disponible)}</td>
-    </tr>`).join('')}</tbody>
-    <tfoot><tr class="totals"><td colspan="3">TOTAL DEUDA BANCO →</td><td style="color:#e74c3c">- ${fmtQ(deudaAcumulada)}</td><td style="color:${cajaColor}">${fmtQ(posicionCajaReal)}</td></tr></tfoot>
-  </table>` : ''}
+
+  <!-- BADGES -->
+  <div class="badges">
+    <span class="badge"><span class="dot" style="background:#27ae60"></span> ${countAlDia} Al día</span>
+    <span class="badge"><span class="dot" style="background:#e74c3c"></span> ${countAtrasado} Atrasados</span>
+    <span class="badge"><span class="dot" style="background:#888"></span> ${countPagado} Pagados</span>
+  </div>
+
+  <!-- TABLA PRINCIPAL -->
   <h3>Detalle de Préstamos</h3>
   <table>
-    <thead><tr><th>#</th><th>Cliente</th><th>Fecha Préstamo</th><th>Vencimiento</th><th>Días Atraso</th><th>Monto</th><th>Total</th><th>Pagado</th><th>Saldo</th><th>Mora</th><th>Estado</th></tr></thead>
+    <thead>
+      <tr>
+        <th>#</th><th>Cliente</th><th>Fecha Préstamo</th><th>Vencimiento</th>
+        <th>Días Atraso</th><th>Monto</th><th>Total</th><th>Pagado</th>
+        <th>Saldo</th><th>Mora</th><th>Estado</th>
+      </tr>
+    </thead>
     <tbody>${filas}</tbody>
-    <tfoot><tr class="totals"><td colspan="5">TOTALES →</td><td>${fmtQ(totalMonto)}</td><td></td><td style="color:#27ae60">${fmtQ(totalPagado)}</td><td style="color:#e74c3c">${fmtQ(totalSaldo)}</td><td>Q 0.00</td><td></td></tr></tfoot>
+    <tfoot>
+      <tr class="totals">
+        <td colspan="5">TOTALES →</td>
+        <td>${fmtQ(totalMonto)}</td>
+        <td>${fmtQ(filasDatos.reduce((a,d) => a + (d.p.total||0), 0))}</td>
+        <td style="color:#27ae60">${fmtQ(totalPagado)}</td>
+        <td style="color:#e74c3c">${fmtQ(totalSaldo)}</td>
+        <td style="color:#e67e22">${fmtQ(totalMora)}</td>
+        <td></td>
+      </tr>
+    </tfoot>
   </table>
+
   ${atrasadosList.length > 0 ? `
-  <h3>⚠ Detalle de Clientes con Atraso</h3>
-  <table>
-    <thead><tr><th>#</th><th>Cliente</th><th>Teléfono</th><th>Venció</th><th>Días Atraso</th><th>Saldo</th><th>Mora</th></tr></thead>
-    <tbody>${filasAtrasados}</tbody>
-    <tfoot><tr class="totals"><td colspan="5">TOTAL ATRASOS →</td><td style="color:#e74c3c">${fmtQ(atrasadosList.reduce((a, p) => a + getSaldo(p, pagos), 0))}</td><td>Q 0.00</td></tr></tfoot>
-  </table>` : ''}
+  <!-- PÁGINA 2: ATRASADOS -->
+  <div class="page-break">
+    <div class="header">
+      <div class="logo-area">${logoSVG}<div class="logo-sub">Sistema de Gestión de Préstamos</div></div>
+      <div class="report-info"><strong>REPORTE DE PRÉSTAMOS</strong><br>Generado: ${fechaLabel}<br>Total registros: ${prestamos.length}</div>
+    </div>
+    <h3>Detalle de Clientes con Atraso</h3>
+    <table>
+      <thead>
+        <tr><th>#</th><th>Cliente</th><th>Teléfono</th><th>Venció</th><th>Días Atraso</th><th>Saldo</th><th>Mora</th></tr>
+      </thead>
+      <tbody>${filasAtrasados}</tbody>
+      <tfoot>
+        <tr class="totals">
+          <td colspan="5">TOTAL ATRASOS →</td>
+          <td style="color:#e74c3c">${fmtQ(totalAtrasadoSaldo)}</td>
+          <td style="color:#e74c3c">${fmtQ(totalAtrasadoMora)}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>` : ''}
+
   </body></html>`;
 }
 
@@ -805,6 +851,91 @@ async function generarExcel(prestamos, pagos, hoy) {
   rs.getCell(`B${rr}`).value = cerradosCobrado; rs.getCell(`B${rr}`).numFmt = '#,##0.00'; rs.getCell(`B${rr}`).font = valFont;
 
   rs.getColumn(1).width = 34; rs.getColumn(2).width = 18; rs.getColumn(3).width = 8; rs.getColumn(4).width = 12;
+
+  // ========== HOJA 4: CERRADOS POR RENOVACIÓN ==========
+  const wc = wb.addWorksheet('Cerrados x Renovación', { properties: { tabColor: { argb: '1E88E5' } } });
+
+  wc.mergeCells('A1:L1');
+  const wcTitle = wc.getCell('A1');
+  wcTitle.value = 'CREDITX — PRÉSTAMOS CERRADOS POR RENOVACIÓN';
+  wcTitle.font = { bold: true, size: 14, color: { argb: 'FFFFFF' } };
+  wcTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1E88E5' } };
+  wcTitle.alignment = { horizontal: 'center', vertical: 'middle' };
+  wc.getRow(1).height = 30;
+
+  wc.mergeCells('A2:L2');
+  const wcSub = wc.getCell('A2');
+  wcSub.value = `Generado: ${hoy} | Solo préstamos cerrados por renovación`;
+  wcSub.font = { size: 9, italic: true, color: { argb: '666666' } };
+  wcSub.alignment = { horizontal: 'center' };
+
+  // Header row
+  const wcHeaders = ['#','Cliente','Categoría','Fecha Préstamo','Vencimiento','Días Atraso','Monto Prestado','Total c/Interés','Total Pagado','Saldo Pendiente','Mora','Estado'];
+  const wcHr = wc.addRow(wcHeaders);
+  wcHr.eachCell((c) => {
+    c.font = { bold: true, size: 10, color: { argb: 'FFFFFF' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '2E4057' } };
+    c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    c.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+  });
+  wc.getRow(3).height = 26;
+
+  // Section header
+  const wcSecRow = wc.addRow([]);
+  wc.mergeCells(wcSecRow.number, 1, wcSecRow.number, 12);
+  const wcSc = wcSecRow.getCell(1);
+  wcSc.value = '  ● PRÉSTAMOS CERRADOS POR RENOVACIÓN';
+  wcSc.font = { bold: true, size: 11, color: { argb: 'FFFFFF' } };
+  wcSc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1E88E5' } };
+
+  const wcFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E3F2FD' } };
+  const wcThinBorder = { top: { style: 'thin', color: { argb: 'AAAAAA' } }, bottom: { style: 'thin', color: { argb: 'AAAAAA' } }, left: { style: 'thin', color: { argb: 'AAAAAA' } }, right: { style: 'thin', color: { argb: 'AAAAAA' } } };
+
+  const wcDataStart = wc.lastRow.number + 1;
+  let wcNum = 0;
+  for (const p of cerrados) {
+    wcNum++;
+    const saldo = p.saldo;
+    const estado = saldo <= 0 ? 'Pagado' : 'Al día';
+    const r = wc.addRow([wcNum, p.nombre, 'Cerrado x Renov.', p.fecha, p.vence, 0, p.monto, p.totalCalc, p.pagado, Math.max(0, saldo), 0, estado]);
+    r.eachCell((cell, ci) => {
+      cell.fill = wcFill;
+      cell.border = wcThinBorder;
+      cell.font = { name: 'Arial', size: 10 };
+      if ([7,8,9,10,11].includes(ci)) cell.numFmt = '#,##0.00';
+      if ([1,6,12].includes(ci)) cell.alignment = { horizontal: 'center' };
+    });
+  }
+  const wcDataEnd = wc.lastRow.number;
+
+  // Totals section
+  wc.addRow([]);
+  const wcTotHdr = wc.addRow([]);
+  wc.mergeCells(wcTotHdr.number, 1, wcTotHdr.number, 12);
+  wcTotHdr.getCell(1).value = '  TOTALES — CERRADOS POR RENOVACIÓN';
+  wcTotHdr.getCell(1).font = { bold: true, size: 12, color: { argb: 'FFFFFF' } };
+  wcTotHdr.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1E88E5' } };
+
+  const wcTotLabels = [
+    ['Cantidad de préstamos', null, `COUNTA(B${wcDataStart}:B${wcDataEnd})`],
+    ['Capital Total Colocado', '#,##0.00', `SUM(G${wcDataStart}:G${wcDataEnd})`],
+    ['Total c/Interés', '#,##0.00', `SUM(H${wcDataStart}:H${wcDataEnd})`],
+    ['Total Pagado', '#,##0.00', `SUM(I${wcDataStart}:I${wcDataEnd})`],
+  ];
+  for (const [lbl, fmt, formula] of wcTotLabels) {
+    const r = wc.addRow([]);
+    r.getCell(2).value = lbl;
+    r.getCell(2).font = { bold: true, name: 'Arial', size: 10 };
+    r.getCell(2).border = wcThinBorder;
+    const c = r.getCell(3);
+    c.value = { formula };
+    c.font = { bold: true, name: 'Arial', size: 10 };
+    c.border = wcThinBorder;
+    if (fmt) c.numFmt = fmt;
+  }
+
+  [4,22,16,15,14,12,16,16,15,16,10,10].forEach((w, i) => { wc.getColumn(i + 1).width = w; });
+  wc.views = [{ state: 'frozen', ySplit: 3 }];
 
   const xlsxPath = '/tmp/reporte_creditx.xlsx';
   await wb.xlsx.writeFile(xlsxPath);
