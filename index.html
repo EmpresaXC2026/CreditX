@@ -2542,6 +2542,14 @@ tbody tr:hover td {
       <div class="form-group"><label>Teléfono</label><input type="tel" id="edit_telefono" placeholder="5555-1234"></div>
       <div class="form-group"><label>Número de DPI</label><input type="text" id="edit_dpi" placeholder="Ej: 3210 98765 1001" maxlength="20"></div>
       <div class="form-group"><label>Dirección</label><input type="text" id="edit_direccion" placeholder="Ej: 5a Calle 2-30, Zona 1"></div>
+      <div class="form-group"><label>Frecuencia de Cobro</label>
+        <div class="np-select-wrap"><select id="edit_frecuencia">
+          <option value="diario">Diario</option>
+          <option value="semanal">Semanal</option>
+          <option value="quincenal">Quincenal</option>
+          <option value="mensual">Mensual</option>
+        </select></div>
+      </div>
       <div class="form-group"><label>% Mora por Atraso</label><input type="number" id="edit_mora" placeholder="5" min="0" step="0.1"></div>
       <div style="display:flex;gap:10px;margin-top:6px;"><button class="btn btn-primary" style="flex:1;" onclick="guardarEdicion()"><svg xmlns="http://www.w3.org/2000/svg" width="0.9em" height="0.9em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;display:inline-block;"><polyline points="20 6 9 17 4 12"/></svg> Guardar Cambios</button><button class="btn btn-outline" onclick="cerrarModalEditar()">Cancelar</button></div>
     </div>
@@ -4701,6 +4709,7 @@ function abrirEditar(id) {
   document.getElementById('edit_telefono').value = p.telefono || '';
   document.getElementById('edit_dpi').value = p.dpi || '';
   document.getElementById('edit_direccion').value = p.direccion || '';
+  document.getElementById('edit_frecuencia').value = p.frecuencia || 'diario';
   document.getElementById('edit_mora').value = p.porcentajeMora || 5;
   document.getElementById('modalEditar').classList.add('open');
 }
@@ -4719,6 +4728,7 @@ function guardarEdicion() {
   prestamos[idx].telefono = document.getElementById('edit_telefono').value.trim();
   prestamos[idx].dpi = document.getElementById('edit_dpi').value.trim();
   prestamos[idx].direccion = document.getElementById('edit_direccion').value.trim();
+  prestamos[idx].frecuencia = document.getElementById('edit_frecuencia').value;
   prestamos[idx].porcentajeMora = parseFloat(document.getElementById('edit_mora').value) || 5;
   save();
   cerrarModalEditar();
