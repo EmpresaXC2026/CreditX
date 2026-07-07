@@ -2060,6 +2060,7 @@ tbody tr:hover td {
         <option value="">Todos</option>
         <option value="Al día">Al día</option>
         <option value="Atrasado">Atrasado</option>
+        <option value="Congelado">Congelado</option>
         <option value="Pagado">Pagado</option>
       </select>
     </div>
@@ -3263,6 +3264,8 @@ function calcMora(p) {
 
   if (saldo <= 0) return { saldo: 0, mora: 0, dias: 0, estado: 'Pagado', vence: venceStr };
 
+  if (p.congelado) return { saldo, mora: 0, dias: 0, estado: 'Congelado', vence: venceStr };
+
   // Detectar cuota individual atrasada usando el calendario de cuotas
   const pagosRealizados = pagos.filter(x => x.prestamoId === p.id && !x.soloIncumplimiento).length;
   const fechasCuotas    = getCuotasFechas(p);
@@ -3535,12 +3538,13 @@ function renderDashboard() {
   const mananaStr = manana.toISOString().split('T')[0];
 
   // Alert banners
-  const atrasados = prestamos.filter(p => calcMora(p).estado === 'Atrasado');
-  const vencenHoy = prestamos.filter(p => { const m = calcMora(p); return m.estado !== 'Pagado' && m.vence === hoy; });
-  const vencenManana = prestamos.filter(p => { const m = calcMora(p); return m.estado !== 'Pagado' && m.vence === mananaStr; });
+  const atrasados = prestamos.filter(p => !p.congelado && calcMora(p).estado === 'Atrasado');
+  const vencenHoy = prestamos.filter(p => { if (p.congelado) return false; const m = calcMora(p); return m.estado !== 'Pagado' && m.vence === hoy; });
+  const vencenManana = prestamos.filter(p => { if (p.congelado) return false; const m = calcMora(p); return m.estado !== 'Pagado' && m.vence === mananaStr; });
 
   // Clientes con cuota que cae HOY y aún no pagaron esa cuota
   const cobrosHoy = prestamos.filter(p => {
+    if (p.congelado) return false;
     const { estado } = calcMora(p);
     if (estado === 'Pagado') return false;
     const cuotaHoy = cuotaQueVenceHoy(p);
@@ -4501,9 +4505,9 @@ function renderTable() {
     const incumpl = getIncumplimientoPendiente(p.id);
     const papTotal = papeleria.filter(pp => pp.nombre === p.nombre).reduce((a, pp) => a + (pp.monto||0), 0);
 
-    const estadoColor = estado === 'Pagado' ? '#00c97a' : estado === 'Atrasado' ? '#c8102e' : '#00c97a';
-    const barColor    = estado === 'Atrasado' ? '#c8102e' : '#00c97a';
-    const estadoLabel = estado === 'Pagado' ? 'PAGADO' : estado === 'Atrasado' ? 'ATRASADO' : 'ACTIVO';
+    const estadoColor = estado === 'Pagado' ? '#00c97a' : estado === 'Atrasado' ? '#c8102e' : estado === 'Congelado' ? '#5b9cf6' : '#00c97a';
+    const barColor    = estado === 'Atrasado' ? '#c8102e' : estado === 'Congelado' ? '#5b9cf6' : '#00c97a';
+    const estadoLabel = estado === 'Pagado' ? 'PAGADO' : estado === 'Atrasado' ? 'ATRASADO' : estado === 'Congelado' ? '❄️ CONGELADO' : 'ACTIVO';
     const frecLabel   = { diario:'diario', semanal:'semanal', quincenal:'quincenal', mensual:'mensual' }[p.frecuencia] || p.frecuencia || '';
 
     const editBtn = esAdmin
@@ -4570,6 +4574,7 @@ function renderTable() {
         </button>
         ${esAdmin ? `
         <button onclick="abrirRenovarDesdeTabla('${p.id}')" style="background:#212121;border:1px solid #2e2e2e;border-radius:6px;padding:7px 10px;font-size:11px;font-weight:600;color:#888;cursor:pointer;font-family:'Syne',sans-serif;"><svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;display:inline-block;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Renovar</button>
+        <button onclick="toggleCongelar('${p.id}')" style="background:${p.congelado ? 'rgba(91,156,246,0.15)' : 'transparent'};border:1px solid #5b9cf6;border-radius:6px;padding:7px 10px;font-size:11px;font-weight:700;color:#5b9cf6;cursor:pointer;font-family:'Syne',sans-serif;">${p.congelado ? '☀️ Descongelar' : '❄️ Congelar'}</button>
         <button onclick="cerrarPrestamo('${p.id}')" style="background:transparent;border:1px solid #c8102e;border-radius:6px;padding:7px 10px;font-size:11px;font-weight:700;color:#c8102e;cursor:pointer;font-family:'Syne',sans-serif;">Cerrar</button>
         <button onclick="eliminar('${p.id}')" style="background:transparent;border:1px solid #333;border-radius:6px;padding:7px 10px;font-size:11px;color:#444;cursor:pointer;font-family:'Syne',sans-serif;"><svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;display:inline-block;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>` : ''}
       </div>
@@ -4734,6 +4739,26 @@ function guardarEdicion() {
   cerrarModalEditar();
   renderTable();
   toast('✓ Datos actualizados correctamente');
+}
+
+function toggleCongelar(id) {
+  const idx = prestamos.findIndex(x => x.id === id);
+  if (idx === -1) return;
+  const p = prestamos[idx];
+  if (!p.congelado) {
+    if (!confirm('¿Congelar este préstamo? Dejará de aparecer en el calendario, notificaciones y avisos de WhatsApp hasta que lo descongeles.')) return;
+    prestamos[idx].congelado = true;
+    save();
+    renderTable();
+    if (typeof renderDashboard === 'function') renderDashboard();
+    toast('❄️ Préstamo congelado');
+  } else {
+    prestamos[idx].congelado = false;
+    save();
+    renderTable();
+    if (typeof renderDashboard === 'function') renderDashboard();
+    toast('☀️ Préstamo descongelado');
+  }
 }
 
 function eliminar(id) {
@@ -6390,8 +6415,8 @@ function abrirCalendarioPagos() {
   const content = document.getElementById('calendarioContent');
   const hoy = today();
 
-  // Solo préstamos activos (no pagados)
-  const activos = prestamos.filter(p => calcMora(p).estado !== 'Pagado');
+  // Solo préstamos activos (no pagados, no congelados)
+  const activos = prestamos.filter(p => { const e = calcMora(p).estado; return e !== 'Pagado' && e !== 'Congelado'; });
 
   if (!activos.length) {
     content.innerHTML = `<div class="empty-state"><div class="es-icon"><svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;display:inline-block;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><p>No hay préstamos activos</p></div>`;
@@ -6579,6 +6604,7 @@ function generarNotificaciones() {
   notificaciones = [];
 
   prestamos.forEach(p => {
+    if (p.congelado) return;
     const { estado, vence, saldo } = calcMora(p);
     if (estado === 'Pagado') return;
 
@@ -7233,7 +7259,8 @@ function renderRenovacionesPanel() {
   const el = document.getElementById('renovacionesPanel');
   if (!el) return;
 
-  const activos = prestamos.filter(p => calcMora(p).estado !== 'Pagado');
+  const activos = prestamos.filter(p => { const e = calcMora(p).estado; return e !== 'Pagado' && e !== 'Congelado'; });
+
   if (!activos.length) {
     el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:12px;">No hay préstamos activos.</p>';
     return;
