@@ -3579,13 +3579,13 @@ function renderDashboard() {
   const totalIncumplDash = getTotalIncumplimiento();
 
   // ── Posición de Caja Real ────────────────────────────────────
-  const CUOTA_BANCO_DASH    = deudas.reduce((a, d) => a + (d.cuota || 0), 0) || 963;
+  const CUOTA_BANCO_DASH    = deudas.reduce((a, d) => a + (d.cuota || 0), 0);
   const efectivoRenovDash   = prestamos.filter(p => p.esRenovacion).reduce((a, p) => a + (p.efectivoEntregado || 0), 0);
   // TODA la papelería (incluso eliminada) se suma a gastos operativos
   const totalPapeleriaDash  = papeleria.reduce((a, p) => a + (p.monto || 0), 0);
   const totalGastosDash     = (gastos.reduce((a, g) => a + (g.monto || 0), 0) || 0) + totalPapeleriaDash;
   const capitalDesdeCajaDash = prestamos.filter(p => !p.esRenovacion && p.saleDeCaja).reduce((a, p) => a + (p.monto || 0), 0);
-  const ajusteManual        = 175; // Ajuste positivo para corregir discrepancia
+  const ajusteManual        = 0; // Sin ajuste manual — cálculo limpio desde cero
   const posicionCajaReal    = totalRecuperado - CUOTA_BANCO_DASH - efectivoRenovDash - totalGastosDash - capitalDesdeCajaDash + ajusteManual;
   const cajaColor           = posicionCajaReal >= 0 ? '#4caf50' : '#e53935';
 
@@ -7156,7 +7156,7 @@ async function renderUtilidadReal() {
   const body = document.getElementById('utilidadBody');
   if (!body) return;
 
-  const CUOTA_BANCO = 963;
+  const CUOTA_BANCO = deudas.reduce((a, d) => a + (d.cuota || 0), 0);
 
   // ── Datos base ───────────────────────────────────────────────
   const prestamosActivos = prestamos.filter(p => calcMora(p).estado !== 'Pagado');
@@ -7195,8 +7195,8 @@ async function renderUtilidadReal() {
   const gastosOperativos = gastos.reduce((a, g) => a + (g.monto || 0), 0);
   const totalGastosConPapeleria = gastosOperativos + papeleriaCobrada;
   
-  // Ajuste positivo para corregir discrepancia
-  const ajusteManualUtil = 175;
+  // Sin ajuste manual — cálculo limpio desde cero
+  const ajusteManualUtil = 0;
 
   // Posición de caja
   const posicionCaja = totalRecuperado - CUOTA_BANCO - efectivoRenovaciones - totalGastosConPapeleria + ajusteManualUtil;
